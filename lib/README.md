@@ -27,6 +27,24 @@ drops out of the build unless every nested folder is separately listed in
 hitting. Splitting by chip instead of by board avoids the need for that
 extra nesting level in the first place — keep it that way.
 
+## More than one chip in a subsystem needs explicit selection, not auto-scan
+
+A subsystem folder with more than one concrete implementation (e.g.
+`lib/rx/sbus.c` and `lib/rx/crsf.c`, both implementing `rx.h`'s same
+function names) can't be left to PlatformIO's default auto-scan at all —
+the LDF isn't picky about which symbols a board actually needs, so it
+would try to compile *every* file in that folder into *every* board and
+collide at link time. `lib/rx/`'s own `platformio.ini` entries are the
+template for this: `lib_ignore = <subsystem>` opts the folder out of
+auto-scan entirely, and a small `scripts/add_<subsystem>.py` explicitly
+compiles only the one implementation that board names (via a
+`custom_helm_<subsystem>` option), plus that subsystem's `shared/`
+subfolder (genuinely shared code — e.g. `lib/rx/shared/rx_timeout.c`,
+used internally by every implementation) unconditionally. Follow this
+template for `lib/imu/`, `lib/baro/`, and anything else that ends up with
+more than one chip per subsystem — which, given the whole point of
+splitting by chip, is the normal case, not an edge case.
+
 ## Hardware-independent logic lives here too
 
 Genuinely target-independent code (control law math, filters, protocol
