@@ -5,10 +5,22 @@ Code has its own additional notes in `/CLAUDE.md` at the repo root).
 
 ## Status
 
-Pre-firmware: structure and docs only, no source code, no build system. The
-toolchain/architecture has not been chosen — do not assume one and do not
-scaffold a build system without confirming the choice first. There are no
-build, lint, or test commands yet.
+Toolchain decided and bring-up milestone reached: PlatformIO,
+`framework = stm32cube` (raw HAL/LL, no Arduino — the user explicitly
+doesn't want Arduino, having weighed it against the pain
+`aoa-boat-controller`'s `platformio.ini` documents fighting the Arduino
+core's assumptions) + FreeRTOS (vendored, see `vendor/freertos-kernel/`'s
+README), targeting the Matek H743-WLITE first via `[env:matek_h743]`.
+`pio run` builds and links cleanly from repo root — no lint/test commands
+yet. Not flashed/bench-verified on real hardware (no ST-Link/
+CubeProgrammer tooling available where this was built).
+
+The real module/scheduler architecture (extensibility, fault isolation/HA
+— what can and can't fail) is NOT designed yet. `src/main.c` is a bring-up
+stub only (one heartbeat task, scheduler started) proving the toolchain
+works end to end — do not treat it as the real firmware structure or build
+features directly onto it without first confirming the actual architecture
+with the user.
 
 ## Context
 
@@ -52,8 +64,11 @@ code.
 
 ## Before scaffolding
 
-Confirm the toolchain/architecture choice with the user before generating
-any build files or firmware source layout under `src/` — whether to build
-from scratch, harvest specific modules from the bench firmware, or base on
-an existing open-source stack (ArduPilot Rover, PX4) is a decision with
-real architectural consequences that hasn't been made yet.
+Toolchain/build-system scaffolding is done — don't re-litigate it. What's
+still open and needs the user's confirmation before building further:
+the module/task architecture (task boundaries, how a module registers
+itself, priority/budget scheme), and the fault-isolation/HA model (what
+happens when a task blows its budget, a driver call blocks, or a sensor
+goes away mid-flight/mid-sail). Don't invent these unilaterally and start
+writing sensor/log/param/control-loop code on top of the bring-up stub
+without that conversation happening first.

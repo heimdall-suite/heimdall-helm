@@ -45,7 +45,22 @@ See [.docs/hardware.md](.docs/hardware.md) for details.
 
 ## Status
 
-No firmware yet. Toolchain/architecture not decided — whether to build from
-scratch, harvest specific modules from the existing bench firmware, or base
-on an existing open-source stack (e.g. ArduPilot Rover, PX4) is still open.
-`src/` is a placeholder until that's settled.
+Built from scratch, not forked from `aoa-boat-controller` (an existing,
+narrower AoA/trim-tab-only project on the same two boards) — that project's
+"things just run in the loop" growing pains are exactly what this repo's
+architecture is meant to avoid, designed in up front instead of retrofitted.
+
+Toolchain decided: **PlatformIO, `framework = stm32cube`** (raw HAL/LL, no
+Arduino) **+ FreeRTOS** (vendored under [vendor/freertos-kernel](vendor/freertos-kernel),
+preemptive scheduling for real fault isolation between modules — see that
+folder's README for why it's vendored rather than a submodule or registry
+package). First target: Matek H743-WLITE (most headroom of the two bench
+boards). RadioMaster Nexus-XR stays the preferred long-term target once
+acquired.
+
+Current milestone: `[env:matek_h743]` builds and links cleanly (HAL +
+FreeRTOS, one heartbeat task, scheduler started) — proves the toolchain
+end to end. Not yet flashed or bench-verified on real hardware (no
+ST-Link/CubeProgrammer tooling in the environment this was built in). No
+clock config, drivers, or the module/scheduler architecture itself yet —
+this is a bring-up-only milestone, not a feature.

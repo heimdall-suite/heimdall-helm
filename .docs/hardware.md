@@ -21,12 +21,22 @@ Preferred target hardware for this firmware to eventually run on, but the
 firmware should not be hard-locked to it — other board targets stay in
 scope.
 
+## Toolchain (decided)
+
+PlatformIO, `framework = stm32cube` (raw HAL/LL, no Arduino) + FreeRTOS
+(vendored, see [vendor/freertos-kernel](../vendor/freertos-kernel)). See
+repo root README's Status section for the current bring-up milestone.
+
 ## Open items / not yet decided
 
 - Exact peripheral set carried over from the bench firmware vs. built fresh
 - Whether STM32F103 (Afroflight32) stays a supported target long-term, or
   the project standardizes on H7-class parts (Matek H743-WLITE and later
   boards) once memory/compute needs from the four core features
-  (sensors, logging, params, control loop) are clearer
-- Toolchain (bare-metal HAL, ChibiOS, Zephyr, or basing on an existing
-  open-source FC stack like ArduPilot/PX4) — see repo root README Status
+  (sensors, logging, params, control loop) are clearer — Afroflight32's
+  128KB flash / 20KB RAM is tight for FreeRTOS plus a full module set
+- Module/scheduler architecture (task boundaries, fault isolation/HA model)
+  — not designed yet, the real next step after this bring-up milestone
+- Flashing/debug tooling (ST-Link/CubeProgrammer or similar) not available
+  in the environment this was built in — real hardware bring-up and
+  verification still needs to happen on the user's bench

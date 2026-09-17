@@ -4,5 +4,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Firmware toolchain build output will be added here once the
-# toolchain/architecture decision is made.
+# PlatformIO build output
+.pio/
