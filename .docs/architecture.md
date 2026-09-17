@@ -92,6 +92,25 @@ CRSF detect signal loss differently:
   for this; CRSF has neither bit and relies entirely on a longer receive
   timeout. This is what triggers the per-function substitution above.
 
+**No separate pipeline stage needed to normalize this** — `lib/rx/rx.h`'s
+interface contract already guarantees `sbus.c` and `crsf.c` report the
+same 3-tier status shape, regardless of how each arrives at it. The
+mapping stage (and everything after it) never needs to know which
+protocol is in use.
+
+That said, the two drivers aren't fully independent in *how* they detect
+loss, which is worth designing for even though it doesn't change the
+external interface: **SBUS needs a receive-timeout backstop too, not just
+its explicit bits.** The failsafe bit only tells you the *receiver*
+detected its own RX-to-TX link is down — it says nothing about the wire
+between the receiver and this board being cut, or the receiver itself
+crashing/browning out, both of which mean no more frames arrive at all,
+bit or no bit. So a generic "haven't seen a valid frame in N ms" watchdog
+belongs once in `lib/rx/` as shared internal code, used by `crsf.c` as its
+*only* detection mechanism and by `sbus.c` as a backstop layered under its
+faster, bit-based detection. The bit-parsing itself stays entirely inside
+`sbus.c` — CRSF has no equivalent, so there's nothing to share there.
+
 Resuming: once RX status returns to `OK`, the mapping stage presumably
 goes back to passing real values through immediately — no separate
 "recovery" state currently planned, but worth confirming once this gets
