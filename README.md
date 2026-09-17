@@ -56,6 +56,9 @@ themselves.
 
 - [.docs/hardware.md](.docs/hardware.md) — target boards, open hardware
   questions
+- [.docs/architecture.md](.docs/architecture.md) — receiver-to-servo data
+  flow design (input mapping, control loops, output mapping) — design
+  sketch, not yet implemented
 - [.agents/AGENTS.md](.agents/AGENTS.md) / [CLAUDE.md](CLAUDE.md) —
   instructions for AI coding agents working in this repo
 
