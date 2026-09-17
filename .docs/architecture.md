@@ -16,8 +16,16 @@ flowchart LR
     OUT["Output mapping"]
     SERVO["Servo driver"]
 
-    RX --> MAP --> CTRL --> OUT --> SERVO
+    RX --> MAP
+    MAP -->|"mode / target functions"| CTRL
+    MAP -->|"passthrough channels"| OUT
+    CTRL --> OUT
+    OUT --> SERVO
 ```
+
+Passthrough channels skip the control loops entirely — they go straight
+from input mapping to output mapping. Only channels mapped to a mode or
+target function feed a control loop.
 
 ## Function/input mapping
 
@@ -47,9 +55,10 @@ protocol's framing.
 ## Control loops
 
 One control loop per controlled axis (Pitch, Roll, ...), each driven by
-its own mode + target inputs from the mapping layer above. A loop in `Off`
-mode produces no output; the channels feeding it are presumably routed as
-passthrough instead at the output mapping stage.
+its own mode + target inputs from the mapping layer above. Only channels
+mapped to a mode/target function reach this stage at all — passthrough
+channels never touch a control loop (see diagram above). A loop in `Off`
+mode produces no output.
 
 ## Output mapping
 
