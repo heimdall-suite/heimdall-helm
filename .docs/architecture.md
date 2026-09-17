@@ -7,7 +7,7 @@ repo root README's Status section for what actually exists today.
 ```mermaid
 flowchart LR
     RX["Input<br/>SBUS/CRSF"]
-    MAP["Function/input mapping"]
+    MAP["Function/input mapping<br/>(failsafe substitution happens here)"]
     CTRL["Control loops<br/>Pitch and/or Roll"]
     OUT["Output mapping"]
     SERVO["Servo driver"]
@@ -54,6 +54,54 @@ This is the layer that makes RX pluggable (SBUS vs. CRSF) invisible to
 everything downstream — control loops and output mapping only ever see
 named functions/passthroughs, never raw channel numbers or a specific
 protocol's framing.
+
+## Failsafe
+
+Substitution happens **at the input mapping stage**, nowhere else:
+
+- **Not in the RX driver** (`sbus.c`/`crsf.c`) — a protocol driver
+  shouldn't know that CH2 means "Pitch mode." It only reports channels +
+  an honest signal status.
+- **Not in the servo driver** — it stays dumb, "doesn't know or care"
+  whether a value came from passthrough or a control loop (see below). It
+  has no basis to pick a safe value per physical servo, and doing it there
+  wouldn't stop a control loop from meanwhile chasing a stale target.
+- **At the mapping stage**, because that's the only place that knows both
+  the RX signal status *and* what each channel semantically means. Each
+  mapped function carries its own failsafe value: a mode function forces
+  to a safe mode (most likely `Off`), a target function forces to a safe
+  setpoint, a passthrough channel forces to a configured safe position
+  (hold-last vs. a fixed preset — not decided yet).
+
+Because substitution happens exactly once, before anything fans out,
+**nothing downstream needs failsafe-awareness at all** — control loops,
+output mapping, and the servo driver just run their completely normal
+logic against whatever the mapping stage now presents. A mode forced to
+`Off` during failsafe produces no output using the exact same "Off
+produces no output" behavior that already exists for a pilot deliberately
+selecting `Off`.
+
+**RX status needs (at least) three tiers, not two**, because SBUS and
+CRSF detect signal loss differently:
+- `OK` — valid, current frame.
+- `FRAME_LOST` — a brief gap. SBUS carries this as an explicit in-frame
+  bit; CRSF has no equivalent bit and would need to infer it from a short
+  receive timeout. Values should probably just hold, not trigger full
+  failsafe substitution yet.
+- `FAILSAFE` — latched loss. SBUS carries a second, distinct in-frame bit
+  for this; CRSF has neither bit and relies entirely on a longer receive
+  timeout. This is what triggers the per-function substitution above.
+
+Resuming: once RX status returns to `OK`, the mapping stage presumably
+goes back to passing real values through immediately — no separate
+"recovery" state currently planned, but worth confirming once this gets
+built.
+
+**Not yet decided**: the actual failsafe *values* — what mode is safe per
+axis, what a passthrough channel's safe position should be, and whether
+hold-last or a fixed preset is right for passthrough. That's a real
+per-function, per-boat decision, not an architecture question — flagged
+here as open rather than guessed at.
 
 ## Control loops
 
