@@ -11,10 +11,14 @@ working parts from that firmware, not port it wholesale:
 Multiple targets stay in scope long-term; these two are the current bench
 set, not a final list.
 
-## Preferred transmitter
+## Preferred future target: RadioMaster Nexus-XR
 
-RadioMaster Nexus XR is the preferred target transmitter, but the firmware
-should not be hard-locked to it — other transmitter/receiver links stay in
+Not a transmitter — a flybarless-helicopter flight-controller board
+(STM32F722RET6, ICM42688P IMU, SPL06-001 baro, 256Mb blackbox flash
+W25N02KVZEIR, 9-pin servo header, 3 independent UART ports A/B/C, XR
+variant adds an onboard dual-SX1281 ExpressLRS receiver on its own UART5).
+Preferred target hardware for this firmware to eventually run on, but the
+firmware should not be hard-locked to it — other board targets stay in
 scope.
 
 ## Open items / not yet decided

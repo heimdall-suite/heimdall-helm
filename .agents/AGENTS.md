@@ -28,10 +28,12 @@ TX/RX market today: sensor/telemetry ecosystems are locked per radio vendor
 sensor bus approach flight controllers (ArduPilot/PX4/Betaflight) take.
 
 Originally named `heimdall-nexus`; renamed to avoid colliding with the
-RadioMaster Nexus XR transmitter (a real product, unrelated to this
-project). RadioMaster Nexus XR is the preferred target transmitter, but
-don't hard-lock design decisions to it — multiple transmitter/receiver
-targets stay in scope.
+RadioMaster Nexus-XR (a real product, unrelated to this project — a
+flybarless-helicopter flight-controller board: STM32F722 + ICM42688P +
+onboard dual-SX1281 ExpressLRS receiver, not a transmitter). Nexus-XR is
+the preferred target hardware for this firmware to eventually run on, but
+don't hard-lock design decisions to it — multiple board targets stay in
+scope.
 
 Four core features to keep central to any architecture decision:
 

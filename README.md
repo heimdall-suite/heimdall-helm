@@ -10,10 +10,11 @@ RC TX/RX market today, where sensor/telemetry ecosystems are locked per
 radio vendor (FrSky S.Port, Futaba SBUS2/FBUS, HoTT, Jeti EX).
 
 Originally named `heimdall-nexus`; renamed to avoid colliding with the
-RadioMaster Nexus XR transmitter (a real product, unrelated to this
-project). RadioMaster Nexus XR is the preferred target transmitter, but the
-firmware is not locked to it — multiple transmitter/receiver targets stay
-in scope.
+RadioMaster Nexus-XR (a real product, unrelated to this project — a
+flybarless-helicopter flight-controller board: STM32F722 + ICM42688P +
+onboard dual-SX1281 ExpressLRS receiver, not a transmitter). Nexus-XR is
+the preferred target hardware for this firmware to eventually run on, but
+multiple board targets stay in scope.
 
 ## Four core features
 
