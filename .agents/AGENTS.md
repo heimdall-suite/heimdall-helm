@@ -5,15 +5,35 @@ Code has its own additional notes in `/CLAUDE.md` at the repo root).
 
 ## Status
 
-Toolchain decided and bring-up milestone reached: PlatformIO,
-`framework = stm32cube` (raw HAL/LL, no Arduino — the user explicitly
-doesn't want Arduino, having weighed it against the pain
+Toolchain decided, and bring-up + multi-target structure milestone
+reached: PlatformIO, `framework = stm32cube` (raw HAL/LL, no Arduino — the
+user explicitly doesn't want Arduino, having weighed it against the pain
 `aoa-boat-controller`'s `platformio.ini` documents fighting the Arduino
 core's assumptions) + FreeRTOS (vendored, see `vendor/freertos-kernel/`'s
-README), targeting the Matek H743-WLITE first via `[env:matek_h743]`.
-`pio run` builds and links cleanly from repo root — no lint/test commands
-yet. Not flashed/bench-verified on real hardware (no ST-Link/
-CubeProgrammer tooling available where this was built).
+README).
+
+Three targets are structurally supported from the start (`platformio.ini`
+has one `[env:...]` per board): `matek_h743` (STM32H743) and `afroflight32`
+(STM32F103) both build and link cleanly, each with its own real,
+bench-derived clock config ported from `aoa-boat-controller`. `nexus_xr`
+(STM32F722, the RadioMaster Nexus-XR) is structurally present —
+`boards/nexus_xr/` exists, `platformio.ini` has the env — but
+`boards/nexus_xr/board.c` deliberately `#error`s: no confirmed HSE crystal
+value or bench-verified pin map exists for that board yet, and fabricating
+one would be worse than not having it. Don't remove that `#error` without
+real hardware or a real schematic to work from.
+
+The per-board split follows `lib/README.md`'s chip-not-board axis: drivers
+go in `lib/<subsystem>/<chip>.c`, reused across any board with that chip,
+NOT duplicated per board the way `aoa-boat-controller` did (its own
+`platformio.ini` documents the LDF trap that split caused — nested
+per-target library folders silently drop out of the build unless
+explicitly listed in `lib_extra_dirs`). `boards/<target>/board.c` only
+decides which driver instances a board wires up.
+
+`pio run -e <target>` builds each env individually from repo root (no
+lint/test commands yet). Not flashed/bench-verified on real hardware (no
+ST-Link/CubeProgrammer tooling available where this was built).
 
 The real module/scheduler architecture (extensibility, fault isolation/HA
 — what can and can't fail) is NOT designed yet. `src/main.c` is a bring-up
@@ -56,19 +76,32 @@ Four core features to keep central to any architecture decision:
 4. **Control loop** — actively drives control surfaces (rudder, throttle,
    trim, thrusters, etc.)
 
-There's existing bench hardware with working custom firmware (targeting
-Afroflight32 Acro Rev6 and Matek H743-WLITE) to harvest good parts from —
-see [hardware.md](../.docs/hardware.md). The long-term goal is a clean,
-robust rebuild released as open source, not a straight port of that bench
-code.
+Built from scratch, not a straight port of `aoa-boat-controller` — but
+specific known-good facts from it (bench-confirmed clock configs, chip
+identities) are worth pulling in deliberately, same way `boards/matek_h743/
+board.c` and `boards/afroflight32/board.c` already did for their clock
+trees. See [hardware.md](../.docs/hardware.md) for target board details.
+
+`afroflight32` is deliberately resource-constrained (20KB RAM / 128KB
+flash — the H743's FreeRTOS heap alone is configured larger than this
+board's entire RAM) and carries a genuinely reduced feature set, not just
+"not implemented yet." Each board's `board_features.h` declares
+`HELM_HAS_*` (hardware facts: is a chip physically wired) and
+`HELM_FEATURE_*` (deliberate software capability toggles) — check
+`boards/afroflight32/board_features.h`'s `HELM_FEATURE_*` values before
+assuming a feature belongs on every target equally; some of those values
+are first-pass placeholders marked TODO, not final decisions, so confirm
+with the user before treating them as settled.
 
 ## Before scaffolding
 
-Toolchain/build-system scaffolding is done — don't re-litigate it. What's
-still open and needs the user's confirmation before building further:
-the module/task architecture (task boundaries, how a module registers
-itself, priority/budget scheme), and the fault-isolation/HA model (what
-happens when a task blows its budget, a driver call blocks, or a sensor
-goes away mid-flight/mid-sail). Don't invent these unilaterally and start
-writing sensor/log/param/control-loop code on top of the bring-up stub
-without that conversation happening first.
+Toolchain/build-system/multi-target scaffolding is done — don't
+re-litigate it, and don't add a fourth board without following the
+existing `boards/<target>/` pattern. What's still open and needs the
+user's confirmation before building further: the module/task architecture
+(task boundaries, how a module registers itself, priority/budget scheme),
+and the fault-isolation/HA model (what happens when a task blows its
+budget, a driver call blocks, or a sensor goes away mid-flight/mid-sail).
+Don't invent these unilaterally and start writing sensor/log/param/
+control-loop code on top of the bring-up stub without that conversation
+happening first.

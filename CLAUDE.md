@@ -8,16 +8,20 @@ adds Claude-Code-specific notes on top.
 
 ## Status
 
-Toolchain decided and bring-up milestone reached: PlatformIO,
-`framework = stm32cube` (raw HAL/LL, no Arduino) + FreeRTOS, targeting the
-Matek H743-WLITE first (`[env:matek_h743]`). `pio run` builds and links
-cleanly. Not yet flashed/bench-verified on real hardware. The actual
-module/scheduler architecture (extensibility, fault isolation/HA) is still
-undesigned — the current `src/main.c` is a bring-up stub (one heartbeat
-task), not the real firmware structure. Confirm architecture direction with
-the user before building it out.
+Toolchain decided, and bring-up + multi-target structure milestone
+reached: PlatformIO, `framework = stm32cube` (raw HAL/LL, no Arduino) +
+FreeRTOS. Three targets from the start: `matek_h743` and `afroflight32`
+both build and link cleanly with real, bench-derived clock configs;
+`nexus_xr` is structurally present but intentionally `#error`s (no
+confirmed hardware data — see `boards/nexus_xr/board.h`). Not yet
+flashed/bench-verified on real hardware. The actual module/scheduler
+architecture (extensibility, fault isolation/HA) is still undesigned — the
+current `src/main.c` is a bring-up stub (one heartbeat task per board), not
+the real firmware structure. Confirm architecture direction with the user
+before building it out.
 
-Build: `pio run` (from repo root). No lint/test commands yet.
+Build: `pio run -e <matek_h743|afroflight32|nexus_xr>` (from repo root;
+`nexus_xr` fails intentionally). No lint/test commands yet.
 
 ## Layout
 
@@ -25,14 +29,24 @@ Build: `pio run` (from repo root). No lint/test commands yet.
 - `.docs/hardware.md` — target board details
 - `.agents/AGENTS.md` — full cross-tool architecture/context notes (the
   primary reference — this file doesn't repeat it)
-- `platformio.ini` — build config; see its own comments for the FPU/
-  FreeRTOS-link wrinkles found during bring-up
-- `vendor/freertos-kernel/` — vendored FreeRTOS-Kernel subset (see its
-  README for why it's not a submodule)
-- `config/FreeRTOSConfig.h` — FreeRTOS config for this target
-- `scripts/add_freertos.py` — PlatformIO extra_script wiring the vendored
-  kernel into the build
-- `src/` — firmware source; currently just the bring-up stub
+- `platformio.ini` — one `[env:...]` per board target; see its own
+  comments for the multi-target wiring approach and FPU-flag wrinkles
+  found during bring-up (don't duplicate FPU flags between `build_flags`
+  and `custom_helm_fpu_flags` — see `scripts/add_freertos.py`'s comment
+  for why that already caused a real bug once)
+- `boards/<target>/` — per-board `board.c`/`board.h` (clock config,
+  `board_init()`), `board_features.h` (capability flags), `FreeRTOSConfig.h`
+- `lib/` — chip/protocol-based drivers and hardware-independent logic,
+  shared across boards (currently empty — see `lib/README.md` for the
+  convention before adding anything here)
+- `vendor/freertos-kernel/` — vendored FreeRTOS-Kernel subset, Cortex-M3
+  and Cortex-M7 ports both in use (see its README for why it's not a
+  submodule)
+- `scripts/add_board.py`, `scripts/add_freertos.py` — PlatformIO
+  extra_scripts wiring the per-board source and vendored kernel into each
+  env's build; both read `custom_helm_*` options from `platformio.ini`
+- `src/main.c` — single composition root for every board; currently just
+  the bring-up stub
 
 ## Suite context
 

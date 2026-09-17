@@ -19,10 +19,14 @@ needs.
 
 - Core kernel: `tasks.c`, `queue.c`, `list.c`, `timers.c`, `croutine.c`,
   `event_groups.c`, `stream_buffer.c`, `include/*.h`
-- Port: `portable/GCC/ARM_CM7/r0p1/` — the Cortex-M7 GCC port. Per
-  FreeRTOS's own docs, `r0p1` is correct for all Cortex-M7 silicon
-  revisions (it contains an errata workaround that's harmless on later
-  revisions), not just r0p1 parts specifically.
+- Ports:
+  - `portable/GCC/ARM_CM7/r0p1/` — Cortex-M7 (Matek H743-WLITE, and the
+    Nexus-XR's STM32F722 once that target is real). Per FreeRTOS's own
+    docs, `r0p1` is correct for all Cortex-M7 silicon revisions (it
+    contains an errata workaround that's harmless on later revisions), not
+    just r0p1 parts specifically.
+  - `portable/GCC/ARM_CM3/` — Cortex-M3 (Afroflight32, STM32F103). No FPU,
+    so no hardware-float build flags needed for this target.
 - Heap: `portable/MemMang/heap_4.c` — coalescing allocator with free-block
   merging, the standard general-purpose choice.
 

@@ -25,16 +25,32 @@ multiple board targets stay in scope.
 4. **Control loop** — actively drives control surfaces (rudder, throttle,
    trim, thrusters, etc.)
 
-## Hardware
+## Hardware — three targets, supported from the start
 
-Bench hardware on hand, with existing custom firmware to harvest working
-parts from (not a straight port — the goal is a clean, robust rebuild
-released as open source):
+| Target (`platformio.ini` env) | MCU | Status |
+|---|---|---|
+| `matek_h743` | STM32H743 (Cortex-M7, dual-precision FPU) | Builds, real clock config, not yet flashed |
+| `afroflight32` | STM32F103 (Cortex-M3, no FPU) | Builds, real clock config, deliberately reduced feature set (20KB RAM) |
+| `nexus_xr` | STM32F722 (Cortex-M7, single-precision FPU) | Structural placeholder only — `board.c` intentionally `#error`s, no confirmed pin/clock data exists yet |
 
-- Afroflight32 Acro Rev6
-- Matek H743-WLITE
+See [.docs/hardware.md](.docs/hardware.md) for details, and
+[boards/](boards/) for the per-target wiring/clock config/feature flags
+themselves.
 
-See [.docs/hardware.md](.docs/hardware.md) for details.
+## Repo structure (multi-target from the start)
+
+- `boards/<target>/` — thin per-board layer: `board.c`/`board.h` (clock
+  config, `board_init()`), `board_features.h` (capability flags),
+  `FreeRTOSConfig.h`. Adding a target means adding a folder here, not
+  touching anything else.
+- `lib/` — chip/protocol-based drivers and hardware-independent logic,
+  shared across every board that needs them (see [lib/README.md](lib/README.md)
+  for why this is chip-based, not board-based — the axis
+  `aoa-boat-controller` got wrong).
+- `src/main.c` — single composition root for every board: `board_init()`,
+  register modules (gated on `board_features.h`), start the scheduler.
+- `vendor/freertos-kernel/` — vendored FreeRTOS-Kernel (Cortex-M3 and
+  Cortex-M7 ports, both in use).
 
 ## Docs
 
@@ -54,13 +70,14 @@ Toolchain decided: **PlatformIO, `framework = stm32cube`** (raw HAL/LL, no
 Arduino) **+ FreeRTOS** (vendored under [vendor/freertos-kernel](vendor/freertos-kernel),
 preemptive scheduling for real fault isolation between modules — see that
 folder's README for why it's vendored rather than a submodule or registry
-package). First target: Matek H743-WLITE (most headroom of the two bench
-boards). RadioMaster Nexus-XR stays the preferred long-term target once
-acquired.
+package).
 
-Current milestone: `[env:matek_h743]` builds and links cleanly (HAL +
-FreeRTOS, one heartbeat task, scheduler started) — proves the toolchain
-end to end. Not yet flashed or bench-verified on real hardware (no
+Current milestone: `matek_h743` and `afroflight32` both build and link
+cleanly (real clock config from each board's own bench-confirmed HSE/PLL
+values, HAL + FreeRTOS, one heartbeat task, scheduler started) — proves
+the toolchain and the multi-target structure end to end. `nexus_xr` is
+structurally present but intentionally not buildable (see table above).
+None of the three are flashed or bench-verified on real hardware yet (no
 ST-Link/CubeProgrammer tooling in the environment this was built in). No
-clock config, drivers, or the module/scheduler architecture itself yet —
-this is a bring-up-only milestone, not a feature.
+real modules or the module/scheduler architecture itself exist yet — this
+is a bring-up-and-structure milestone, not a feature.
