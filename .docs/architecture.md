@@ -81,20 +81,27 @@ logic against whatever the mapping stage now presents. A mode forced to
 produces no output" behavior that already exists for a pilot deliberately
 selecting `Off`.
 
-**RX status needs (at least) three tiers, not two**, because SBUS and
-CRSF detect signal loss differently:
-- `OK` — valid, current frame.
-- `FRAME_LOST` — a brief gap. SBUS carries this as an explicit in-frame
-  bit; CRSF has no equivalent bit and would need to infer it from a short
-  receive timeout. Values should probably just hold, not trigger full
-  failsafe substitution yet.
-- `FAILSAFE` — latched loss. SBUS carries a second, distinct in-frame bit
-  for this; CRSF has neither bit and relies entirely on a longer receive
-  timeout. This is what triggers the per-function substitution above.
+**Control-relevant status is only two tiers, `OK` vs. `FAILSAFE`** — a
+brief frame-loss gap doesn't need its own behavioral branch, because
+"hold the last known value" isn't something that needs code to make
+happen: the driver simply doesn't update its latest-value struct on a
+failed decode, so any consumer reading it already sees the previous good
+values, automatically. There's no point where the mapping stage needs to
+notice a gap and *decide* to hold — holding is just what "no update
+happened" already looks like.
 
-**No separate pipeline stage needed to normalize this** — `lib/rx/rx.h`'s
-interface contract already guarantees `sbus.c` and `crsf.c` report the
-same 3-tier status shape, regardless of how each arrives at it. The
+A finer-grained frame-loss signal (SBUS's explicit bit, or a receive-age
+timer for CRSF) is real and useful, but as **diagnostic data for logging
+and telemetry** — link-quality/frame-loss-rate feedback — not as a third
+status tier other logic branches on. Keep it as a separate field (e.g. a
+last-frame-age or loss counter) alongside the `OK`/`FAILSAFE` status,
+consumed by logging/telemetry the same "latest value" way sensor data is,
+rather than folding it into the value that gates mapping-stage
+substitution.
+
+**No separate pipeline stage needed to normalize any of this** —
+`lib/rx/rx.h`'s interface contract already guarantees `sbus.c` and
+`crsf.c` report the same shape, regardless of how each arrives at it. The
 mapping stage (and everything after it) never needs to know which
 protocol is in use.
 
