@@ -4,9 +4,27 @@ Status: design sketch, not yet implemented — captures the intended shape
 of the pipeline before any driver/control-loop code gets written. See
 repo root README's Status section for what actually exists today.
 
+
 ```mermaid
 flowchart LR
-    RX["Input<br/>SBUS/CRSF"]
+    subgraph Input["Input (exactly one compiled per board)"]
+        direction TB
+        subgraph SBUS
+            direction TB
+            DSBUS["Decode<br/>(+ explicit frame-lost/<br/>failsafe bits)"]
+            TOSBUS["Timeout watchdog<br/>(backstop)"]
+            DSBUS --> OUTSBUS["channels + status"]
+            TOSBUS --> OUTSBUS
+        end
+        subgraph CRSF
+            direction TB
+            DCRSF["Decode"]
+            TOCRSF["Timeout watchdog<br/>(only mechanism —<br/>no in-frame bits)"]
+            DCRSF --> OUTCRSF["channels + status"]
+            TOCRSF --> OUTCRSF
+        end
+    end
+
     MAP["Function/input mapping<br/>(failsafe substitution happens here)"]
     CTRL["Control loops<br/>Pitch and/or Roll"]
     OUT["Output mapping"]
@@ -15,7 +33,8 @@ flowchart LR
     LOG["Blackbox / logging"]
     TEL["Telemetry feedback"]
 
-    RX --> MAP
+    OUTSBUS --> MAP
+    OUTCRSF --> MAP
     MAP -->|"mode / target functions"| CTRL
     MAP -->|"passthrough channels"| OUT
     CTRL --> OUT
