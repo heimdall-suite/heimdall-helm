@@ -83,6 +83,27 @@ static void system_clock_config(void) {
     HAL_RCCEx_CRSConfig(&crsInit);
 }
 
+/* PE3 "CAL" LED -- see board_led_toggle()'s own comment in board.h for
+   the pin/polarity source. */
+static void led_init(void) {
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_3;
+    gpioInit.Mode = GPIO_MODE_OUTPUT_PP;
+    gpioInit.Pull = GPIO_NOPULL;
+    gpioInit.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOE, &gpioInit);
+
+    /* active-low: start off */
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
+
+void board_led_toggle(void) {
+    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_3);
+}
+
 void board_init(void) {
     system_clock_config();
+    led_init();
 }

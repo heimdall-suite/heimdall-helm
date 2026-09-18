@@ -21,4 +21,21 @@
 #define HELM_FEATURE_TELEMETRY_SPORT 1
 #define HELM_FEATURE_PARAMS_PERSIST 1
 
+/* HELM_HAS_ROM_BOOTLOADER_DFU: this chip's ROM DFU-jump technique (RTC
+   backup register + reset, see lib/bootloader/stm32h7.c) is implemented
+   and bench-confirmed working on this exact physical board (see that
+   file's own header comment) -- 1 here, 0 on boards without a ported
+   implementation. */
+#define HELM_HAS_ROM_BOOTLOADER_DFU 1
+
+/* HELM_FEATURE_CLI: build the USB-CDC CLI console (lib/shell + lib/cli +
+   lib/usb_cdc) and register its bootloader-DFU command. Off on boards
+   with no USB CDC transport ported yet. */
+#define HELM_FEATURE_CLI 1
+
+/* HELM_HAS_DEBUG_LED: board_led_toggle() (board.h) exists and its pin/
+   polarity is bench-confirmed on this board -- see that function's own
+   comment. Gates lib/debug/heartbeat.c's LED toggle. */
+#define HELM_HAS_DEBUG_LED 1
+
 #endif /* HELM_BOARD_FEATURES_H */

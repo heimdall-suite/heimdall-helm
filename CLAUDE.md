@@ -27,6 +27,8 @@ Build: `pio run -e <matek_h743|afroflight32|nexus_xr>` (from repo root;
 
 - `README.md` — short overview + status, points into the docs below
 - `.docs/hardware.md` — target board details
+- `.docs/cli.md` — the USB-serial CLI: wiring, which boards have it, how
+  to add a command
 - `.agents/AGENTS.md` — full cross-tool architecture/context notes (the
   primary reference — this file doesn't repeat it)
 - `platformio.ini` — one `[env:...]` per board target; see its own

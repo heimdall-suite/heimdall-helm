@@ -29,4 +29,16 @@
 #define HELM_FEATURE_PARAMS_PERSIST 0  /* cut for now -- TODO: revisit once a persistence
                                            backend is designed and its footprint is known */
 
+/* No ROM-bootloader-DFU or USB-CDC-CLI port exists for STM32F103 yet --
+   would need its own from-real-source derivation and bench verification,
+   same standard as every other register-level decision here (see
+   lib/bootloader/stm32h7.c's header comment). Not attempted yet, not a
+   RAM/flash budget decision like the flags above. */
+#define HELM_HAS_ROM_BOOTLOADER_DFU 0
+#define HELM_FEATURE_CLI 0
+
+/* No board_led_toggle() implementation exists for this board yet -- no
+   LED pin bench-confirmed here, same standard as the flags above. */
+#define HELM_HAS_DEBUG_LED 0
+
 #endif /* HELM_BOARD_FEATURES_H */

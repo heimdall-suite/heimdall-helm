@@ -56,6 +56,8 @@ themselves.
 
 - [.docs/hardware.md](.docs/hardware.md) — target boards, open hardware
   questions
+- [.docs/cli.md](.docs/cli.md) — the USB-serial CLI: how it's wired, which
+  boards have it, existing commands, how to add one
 - [.docs/architecture/](.docs/architecture/) — architecture docs, split
   into one page per chain (receiver-to-servo, control loops, sensors,
   telemetry, logging) — design sketch, not yet implemented; start at
