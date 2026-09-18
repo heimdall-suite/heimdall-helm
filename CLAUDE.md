@@ -13,8 +13,12 @@ reached: PlatformIO, `framework = stm32cube` (raw HAL/LL, no Arduino) +
 FreeRTOS. Three targets from the start: `matek_h743` and `afroflight32`
 both build and link cleanly with real, bench-derived clock configs;
 `nexus_xr` is structurally present but intentionally `#error`s (no
-confirmed hardware data — see `boards/nexus_xr/board.h`). Not yet
-flashed/bench-verified on real hardware. The actual module/scheduler
+confirmed hardware data — see `boards/nexus_xr/board.h`). `matek_h743` is
+now flashed/bench-verified on real hardware over USB DFU (`pio run -e
+matek_h743 -t upload`, no ST-Link/CubeProgrammer involved); `afroflight32`
+is planned to flash the same USB-DFU way but hasn't been bench-verified
+yet — see `.agents/AGENTS.md` for the difference in how each board enters
+its bootloader. The actual module/scheduler
 architecture (extensibility, fault isolation/HA) is still undesigned — the
 current `src/main.c` is a bring-up stub (one heartbeat task per board), not
 the real firmware structure. Confirm architecture direction with the user

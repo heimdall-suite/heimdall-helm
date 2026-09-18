@@ -32,8 +32,18 @@ explicitly listed in `lib_extra_dirs`). `boards/<target>/board.c` only
 decides which driver instances a board wires up.
 
 `pio run -e <target>` builds each env individually from repo root (no
-lint/test commands yet). Not flashed/bench-verified on real hardware (no
-ST-Link/CubeProgrammer tooling available where this was built).
+lint/test commands yet). `matek_h743` is now flashed/bench-verified on
+real hardware: `pio run -e matek_h743 -t upload` goes out over its ROM
+USB DFU bootloader (dfu-util) — no ST-Link/CubeProgrammer involved, and
+none is used for any target in this project. Once firmware with
+`HELM_FEATURE_CLI`/`HELM_HAS_ROM_BOOTLOADER_DFU` is already running, its
+own `dfu` CLI command (`lib/bootloader/stm32h7.c`) jumps it into that
+bootloader in software, over the same USB cable, no button press needed.
+`afroflight32` is planned to flash the same USB-DFU way but has no
+software jump ported yet (`HELM_HAS_ROM_BOOTLOADER_DFU 0`, no CLI on that
+board) — its bootloader has to be entered manually instead, and it hasn't
+been bench-verified yet. `nexus_xr` remains unbuildable on purpose (see
+above).
 
 The real module/scheduler architecture (extensibility, fault isolation/HA
 — what can and can't fail) is NOT designed yet. `src/main.c` is a bring-up
