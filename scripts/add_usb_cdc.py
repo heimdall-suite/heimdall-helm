@@ -2,7 +2,7 @@ Import("env")
 
 # Selects exactly one USB CDC transport implementation per board (only
 # stm32h7.c exists so far) -- same explicit-source-selection reasoning as
-# add_rx.py/add_bootloader.py. lib_ignore = usb_cdc is set in every env in
+# add_bootloader.py. lib_ignore = usb_cdc is set in every env in
 # platformio.ini; only boards that actually have an implementation add
 # this script to their extra_scripts.
 project_dir = env.subst("$PROJECT_DIR")
@@ -29,10 +29,10 @@ env.BuildSources(
 # (lib/usb_cdc/stm32h7.c, boards/<target>/usbd_conf.c/usbd_desc.c) is
 # added via explicit env.BuildSources() instead, the same
 # bypass-the-LDF-entirely pattern boards/, vendor/freertos-kernel/, and
-# lib/rx/ already use -- so the LDF never sees those #include lines and
-# never pulls the middleware in on its own. Compile the two pieces this
-# project actually uses (Core, Class/CDC) explicitly here, same as
-# everything else that pattern touches.
+# lib/bootloader/ already use -- so the LDF never sees those #include
+# lines and never pulls the middleware in on its own. Compile the two
+# pieces this project actually uses (Core, Class/CDC) explicitly here,
+# same as everything else that pattern touches.
 platform = env.PioPlatform()
 usb_lib_dir = platform.get_package_dir("framework-stm32cubeh7") + "/Middlewares/ST/STM32_USB_Device_Library"
 

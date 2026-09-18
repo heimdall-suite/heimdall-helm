@@ -3,6 +3,7 @@
 #include "board.h"
 #include "board_features.h"
 #include "heartbeat.h"
+#include "rx.h"
 #include "supervisor.h"
 
 #if defined(STM32H7)
@@ -88,6 +89,16 @@ int main(void) {
     // HELM_FEATURE_* flag, same as the heartbeat below: every board gets
     // the safety net regardless of feature budget.
     supervisor_start();
+
+    // Bind the active RX protocol driver (issue #6 scaffolding -- picks
+    // board_features.h's compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF
+    // default; no task or supervisor registration yet, that lands with
+    // the real Input->Mapping->Control->Output chain, issue #7). This
+    // #include is also what pulls lib/rx/ into the build via the LDF's
+    // normal chain scan -- see platformio.ini's header comment for why
+    // lib/rx/, unlike lib/bootloader/ and lib/usb_cdc/, doesn't need an
+    // explicit add_rx.py/lib_ignore bypass.
+    rx_start();
 
 #if HELM_FEATURE_CLI
     // Start the CLI console task (issue #1) -- USB CDC transport, `status`/

@@ -4,10 +4,12 @@
 #include <stdint.h>
 
 /* Common interface every RX protocol driver implements (sbus.c, crsf.c --
-   exactly one compiled per board, see scripts/add_rx.py and
-   platformio.ini's custom_helm_rx). See .docs/architecture/
-   receiver-to-servo.md's Failsafe section for the reasoning behind this
-   shape, in particular why status is only two tiers. */
+   both compile in on every board, see lib/README.md's addendum and
+   .docs/architecture/module-architecture.md's RX case study for why this
+   is a runtime vtable pick rather than the usual build-time single-pick
+   template). See .docs/architecture/receiver-to-servo.md's Failsafe
+   section for the reasoning behind the output shape, in particular why
+   status is only two tiers. */
 
 #define RX_MAX_CHANNELS 16
 
@@ -31,13 +33,35 @@ typedef struct {
     uint32_t frame_loss_count;
 } RxFrame;
 
-/* TODO: rx_update() (the RX task, writer) and rx_get_latest() (any other
-   task, reader) will need a thread-safety mechanism (mutex or similar)
-   once both are actually implemented concurrently -- not added yet, this
-   is structure only. */
+/* One vtable per protocol driver -- {init, poll} function pointers, not
+   #ifdef-selected free functions, so both sbus.c and crsf.c can compile
+   in unconditionally without colliding at link time. rx_sbus_driver()/
+   rx_crsf_driver() each just return a pointer to their own static
+   instance of this. */
+typedef struct {
+    void (*init)(void);
+    void (*poll)(RxFrame *out);
+} rx_driver_t;
 
-void rx_init(void);
-void rx_update(void);
+const rx_driver_t *rx_sbus_driver(void);
+const rx_driver_t *rx_crsf_driver(void);
+
+/* TODO: rx_poll() (the eventual RX task, writer) and rx_get_latest() (any
+   other task, reader) will need a thread-safety mechanism (mutex or
+   similar) once a real task actually calls poll() concurrently with
+   readers -- not added yet, this is structure only. */
+
+/* Binds the active driver and calls its init(). Selection is the
+   persisted input-mode param once HELM_FEATURE_PARAMS_PERSIST lands
+   (#10); until then, the compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/
+   _CRSF default in board_features.h. */
+void rx_start(void);
+
+/* Polls the currently-bound driver, storing its output for
+   rx_get_latest(). Not yet called from a task of its own -- that lands
+   with the real Input->Mapping->Control->Output chain (#7). */
+void rx_poll(void);
+
 void rx_get_latest(RxFrame *out);
 
 #endif /* HELM_RX_H */

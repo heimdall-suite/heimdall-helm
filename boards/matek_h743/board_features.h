@@ -38,4 +38,12 @@
    comment. Gates lib/debug/heartbeat.c's LED toggle. */
 #define HELM_HAS_DEBUG_LED 1
 
+/* HELM_RX_DEFAULT_PROTOCOL_*: compile-time fallback for which lib/rx/
+   driver rx_start() binds, used until HELM_FEATURE_PARAMS_PERSIST's
+   persisted input-mode param exists (#10) -- see .docs/architecture/
+   module-architecture.md's RX case study. This board's receiver wiring
+   is SBUS. Exactly one of these must be 1. */
+#define HELM_RX_DEFAULT_PROTOCOL_SBUS 1
+#define HELM_RX_DEFAULT_PROTOCOL_CRSF 0
+
 #endif /* HELM_BOARD_FEATURES_H */

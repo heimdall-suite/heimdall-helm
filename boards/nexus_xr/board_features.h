@@ -21,4 +21,13 @@
    hardware on the bench at all, don't guess (see board.h). */
 #define HELM_HAS_DEBUG_LED 0
 
+/* HELM_RX_DEFAULT_PROTOCOL_*: compile-time fallback for which lib/rx/
+   driver rx_start() binds, used until HELM_FEATURE_PARAMS_PERSIST's
+   persisted input-mode param exists (#10) -- see .docs/architecture/
+   module-architecture.md's RX case study. The XR's onboard ExpressLRS
+   receiver uses CRSF framing, not SBUS. Exactly one of these must be
+   1. */
+#define HELM_RX_DEFAULT_PROTOCOL_SBUS 0
+#define HELM_RX_DEFAULT_PROTOCOL_CRSF 1
+
 #endif /* HELM_BOARD_FEATURES_H */
