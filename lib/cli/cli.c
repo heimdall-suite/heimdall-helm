@@ -8,6 +8,8 @@
 #include "task.h"
 #include "board.h"
 #include "bootloader.h"
+#include "rx.h"
+#include "servo.h"
 #include "shell.h"
 #include "usb_cdc.h"
 #include <stdio.h>
@@ -29,6 +31,25 @@ static void cmd_status(const char *args) {
     char line[64];
     snprintf(line, sizeof(line), "board: %s  uptime: %lu ms\r\n", HELM_BOARD_NAME,
               (unsigned long)HAL_GetTick());
+    shell_print(line);
+}
+
+/* `pipeline` command handler: prints the Input->Mapping->Control->
+   Output->Servo stub chain's (issue #7) final stage output -- the
+   plumbing this chain exists to prove, made observable on the bench
+   without needing real RX hardware or a scope on a PWM pin yet. */
+static void cmd_pipeline(const char *args) {
+    (void)args;
+    ServoFrame frame;
+    servo_get_latest(&frame);
+
+    char line[160];
+    int n = snprintf(line, sizeof(line), "pipeline: status=%s servos=[",
+                      frame.status == RX_STATUS_OK ? "OK" : "FAILSAFE");
+    for (int i = 0; i < RX_MAX_CHANNELS && n < (int)sizeof(line); i++) {
+        n += snprintf(line + n, sizeof(line) - n, "%s%u", i == 0 ? "" : " ", frame.servos[i]);
+    }
+    snprintf(line + n, sizeof(line) - n, "]\r\n");
     shell_print(line);
 }
 
@@ -63,6 +84,10 @@ static void cli_task(void *arg) {
     }
     if (!shell_register("dfu", "reboot into the ROM USB DFU bootloader", cmd_dfu)) {
         shell_print("WARNING: command table full, \"dfu\" NOT registered\r\n");
+    }
+    if (!shell_register("pipeline", "show the RX->servo stub chain's final stage output",
+                         cmd_pipeline)) {
+        shell_print("WARNING: command table full, \"pipeline\" NOT registered\r\n");
     }
 
     shell_task(NULL);

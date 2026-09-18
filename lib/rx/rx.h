@@ -46,20 +46,20 @@ typedef struct {
 const rx_driver_t *rx_sbus_driver(void);
 const rx_driver_t *rx_crsf_driver(void);
 
-/* TODO: rx_poll() (the eventual RX task, writer) and rx_get_latest() (any
-   other task, reader) will need a thread-safety mechanism (mutex or
-   similar) once a real task actually calls poll() concurrently with
-   readers -- not added yet, this is structure only. */
-
-/* Binds the active driver and calls its init(). Selection is the
-   persisted input-mode param once HELM_FEATURE_PARAMS_PERSIST lands
+/* Binds the active driver, calls its init(), and starts the RX task
+   (issue #7's Input stage) that periodically calls rx_poll() and
+   publishes into RX's own length-1 supervised queue. Driver selection is
+   the persisted input-mode param once HELM_FEATURE_PARAMS_PERSIST lands
    (#10); until then, the compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/
    _CRSF default in board_features.h. */
 void rx_start(void);
 
-/* Polls the currently-bound driver, storing its output for
-   rx_get_latest(). Not yet called from a task of its own -- that lands
-   with the real Input->Mapping->Control->Output chain (#7). */
+/* Polls the currently-bound driver and publishes its output into RX's
+   queue (xQueueOverwrite) for rx_get_latest() (xQueuePeek) -- see
+   .docs/architecture/module-architecture.md's "Inter-stage data" section
+   for why overwrite/peek rather than a normal queue. Exposed publicly so
+   rx_start() can seed the queue with one real poll before the RX task's
+   own loop starts; the task is the only other caller. */
 void rx_poll(void);
 
 void rx_get_latest(RxFrame *out);

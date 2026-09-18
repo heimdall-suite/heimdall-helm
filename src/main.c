@@ -2,8 +2,12 @@
 #include "task.h"
 #include "board.h"
 #include "board_features.h"
+#include "control.h"
 #include "heartbeat.h"
+#include "mapping.h"
+#include "output.h"
 #include "rx.h"
+#include "servo.h"
 #include "supervisor.h"
 
 #if defined(STM32H7)
@@ -88,17 +92,26 @@ int main(void) {
     // "Fault isolation" section) -- unconditional, not gated behind a
     // HELM_FEATURE_* flag, same as the heartbeat below: every board gets
     // the safety net regardless of feature budget.
-    supervisor_start();
-
-    // Bind the active RX protocol driver (issue #6 scaffolding -- picks
-    // board_features.h's compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF
-    // default; no task or supervisor registration yet, that lands with
-    // the real Input->Mapping->Control->Output chain, issue #7). This
-    // #include is also what pulls lib/rx/ into the build via the LDF's
-    // normal chain scan -- see platformio.ini's header comment for why
-    // lib/rx/, unlike lib/bootloader/ and lib/usb_cdc/, doesn't need an
-    // explicit add_rx.py/lib_ignore bypass.
+    // Start the Input->Mapping->Control->Output->Servo stub chain (issue
+    // #7), each stage its own task/queue/supervisor-registered module
+    // per .docs/architecture/module-architecture.md, wired in this
+    // pipeline order (though that order isn't actually load-bearing: every
+    // module's queue is created and seeded here, before
+    // vTaskStartScheduler(), so no consumer can run before a producer's
+    // queue holds a valid value regardless of _start() call order).
+    // rx_start()'s driver pick is board_features.h's compile-time
+    // HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF default (issue #6); every stage
+    // past it is a fixed passthrough stand-in, no real mapping table or
+    // control-loop math yet -- see each module's own header. This
+    // #include chain is also what pulls lib/rx/ (and these new libs) into
+    // the build via the LDF's normal chain scan -- see platformio.ini's
+    // header comment for why lib/rx/, unlike lib/bootloader/ and
+    // lib/usb_cdc/, doesn't need an explicit add_rx.py/lib_ignore bypass.
     rx_start();
+    mapping_start();
+    control_start();
+    output_start();
+    servo_start();
 
 #if HELM_FEATURE_CLI
     // Start the CLI console task (issue #1) -- USB CDC transport, `status`/
