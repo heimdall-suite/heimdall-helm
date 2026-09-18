@@ -24,6 +24,7 @@ flowchart LR
 
 | Page | Covers |
 |---|---|
+| [module-architecture.md](module-architecture.md) | Cross-cutting: module lifecycle, task priority tiers, inter-stage queues, fault isolation/supervisor, crash safety — the convention every chain below is built on |
 | [receiver-to-servo.md](receiver-to-servo.md) | RX input, function/input mapping, failsafe, output mapping, servo driver |
 | [control-loops.md](control-loops.md) | Per-axis control loops, mode transitions, timing/rate constraints |
 | [sensors.md](sensors.md) | Sensor driver model, onboard vs. peripheral, hard-required vs. optional |
