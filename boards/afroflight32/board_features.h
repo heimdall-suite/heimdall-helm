@@ -29,13 +29,21 @@
 #define HELM_FEATURE_PARAMS_PERSIST 0  /* cut for now -- TODO: revisit once a persistence
                                            backend is designed and its footprint is known */
 
-/* No ROM-bootloader-DFU or USB-CDC-CLI port exists for STM32F103 yet --
-   would need its own from-real-source derivation and bench verification,
-   same standard as every other register-level decision here (see
-   lib/bootloader/stm32h7.c's header comment). Not attempted yet, not a
-   RAM/flash budget decision like the flags above. */
-#define HELM_HAS_ROM_BOOTLOADER_DFU 0
+/* No USB-CDC-CLI port exists for STM32F103 yet -- would need its own
+   from-real-source derivation and bench verification, same standard as
+   every other register-level decision here (see lib/bootloader/
+   stm32h7.c's header comment). Not attempted yet, not a RAM/flash budget
+   decision like the flags above. This board IS planned to get a CLI
+   eventually, unlike HELM_HAS_ROM_BOOTLOADER_DFU below -- the two aren't
+   the same port, don't assume one implies the other. */
 #define HELM_FEATURE_CLI 0
+
+/* This board won't get the CLI's `dfu` bootloader-jump command even once
+   HELM_FEATURE_CLI above lands -- entering this chip's bootloader stays
+   a manual (BOOT0-strap) step, unlike matek_h743's software jump (see
+   lib/bootloader/stm32h7.c). Separate capability from HELM_FEATURE_CLI,
+   not just "not ported yet" the same way that flag is. */
+#define HELM_HAS_ROM_BOOTLOADER_DFU 0
 
 /* No board_led_toggle() implementation exists for this board yet -- no
    LED pin bench-confirmed here, same standard as the flags above. */
