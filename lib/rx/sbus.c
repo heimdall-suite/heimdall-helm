@@ -4,7 +4,8 @@
 /* SBUS driver: structure only, no decode logic yet. Will own a UART RX
    interrupt/DMA path decoding SBUS frames, its own RxTimeoutWatchdog as a
    backstop, and SBUS's own explicit frame-lost/failsafe bits as the fast
-   path -- see .docs/architecture.md's Failsafe section. */
+   path -- see .docs/architecture/receiver-to-servo.md's Failsafe
+   section. */
 
 static RxFrame latest = {0};
 static RxTimeoutWatchdog timeout_watchdog;

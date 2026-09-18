@@ -5,9 +5,9 @@
 
 /* Common interface every RX protocol driver implements (sbus.c, crsf.c --
    exactly one compiled per board, see scripts/add_rx.py and
-   platformio.ini's custom_helm_rx). See .docs/architecture.md's Failsafe
-   section for the reasoning behind this shape, in particular why status
-   is only two tiers. */
+   platformio.ini's custom_helm_rx). See .docs/architecture/
+   receiver-to-servo.md's Failsafe section for the reasoning behind this
+   shape, in particular why status is only two tiers. */
 
 #define RX_MAX_CHANNELS 16
 

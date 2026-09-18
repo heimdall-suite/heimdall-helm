@@ -9,8 +9,9 @@
    bit (CRSF), and as a backstop under faster bit-based detection for
    protocols that have one (SBUS) -- a cut wire or a crashed receiver
    means no more frames arrive at all, bit or no bit. See
-   .docs/architecture.md's Failsafe section. Not part of rx.h's public
-   interface -- each driver owns its own watchdog instance internally. */
+   .docs/architecture/receiver-to-servo.md's Failsafe section. Not part of
+   rx.h's public interface -- each driver owns its own watchdog instance
+   internally. */
 
 typedef struct {
     uint32_t last_valid_frame_tick;

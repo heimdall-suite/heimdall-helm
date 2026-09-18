@@ -4,7 +4,8 @@
 /* CRSF driver: structure only, no decode logic yet. No in-frame failsafe
    bit exists in this protocol (unlike SBUS) -- the shared
    RxTimeoutWatchdog is this driver's ONLY detection mechanism, not a
-   backstop. See .docs/architecture.md's Failsafe section. */
+   backstop. See .docs/architecture/receiver-to-servo.md's Failsafe
+   section. */
 
 static RxFrame latest = {0};
 static RxTimeoutWatchdog timeout_watchdog;
