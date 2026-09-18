@@ -3,6 +3,7 @@
 #include "board.h"
 #include "board_features.h"
 #include "heartbeat.h"
+#include "supervisor.h"
 
 #if defined(STM32H7)
 #include "stm32h7xx_hal.h"
@@ -80,6 +81,13 @@ int main(void) {
     // any other early peripheral init board.c owns.
     HAL_Init();
     board_init();
+
+    // Start the module-liveness supervisor (issue #4) before any module
+    // that will register with it (.docs/architecture/module-architecture.md's
+    // "Fault isolation" section) -- unconditional, not gated behind a
+    // HELM_FEATURE_* flag, same as the heartbeat below: every board gets
+    // the safety net regardless of feature budget.
+    supervisor_start();
 
 #if HELM_FEATURE_CLI
     // Start the CLI console task (issue #1) -- USB CDC transport, `status`/
