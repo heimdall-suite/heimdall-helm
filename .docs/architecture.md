@@ -6,6 +6,7 @@ repo root README's Status section for what actually exists today.
 
 
 ```mermaid
+%%{init: {'theme': 'neutral'}}%%
 flowchart LR
     subgraph Input["Input (exactly one compiled per board)"]
         direction TB
