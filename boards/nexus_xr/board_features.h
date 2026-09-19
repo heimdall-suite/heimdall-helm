@@ -46,4 +46,8 @@
    comment on what this flag gates. */
 #define HELM_HAS_SBUS_UART 0
 
+/* HELM_HAS_SPORT_UART: no hardware on the bench at all -- see
+   matek_h743/board_features.h's own comment for what this gates. */
+#define HELM_HAS_SPORT_UART 0
+
 #endif /* HELM_BOARD_FEATURES_H */

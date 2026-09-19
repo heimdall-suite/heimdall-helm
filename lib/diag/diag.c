@@ -4,10 +4,14 @@
 #include <string.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#include "board_features.h"
 #include "rx.h"
 #include "servo.h"
 #include "shell.h"
 #include "telemetry.h"
+#if HELM_HAS_SPORT_UART
+#include "sport.h"
+#endif
 
 /* `pipeline`: prints the Input->Mapping->Control->Output->Servo stub
    chain's (issue #7) final stage output -- the plumbing this chain
@@ -105,6 +109,22 @@ static void diag_telemetry(void) {
     }
 }
 
+#if HELM_HAS_SPORT_UART
+/* `sport`: poll-marker vs. poll-match counters (issue #18) -- see
+   sport.h's own comment for why both, not just one "poll answered"
+   count: tells "receiver isn't polling at all" apart from "polling, but
+   our physical ID never matches" apart from "genuinely working". */
+static void diag_sport(void) {
+    uint32_t markers, matches;
+    sport_get_counters(&markers, &matches);
+
+    char line[64];
+    snprintf(line, sizeof(line), "sport: poll_markers=%lu poll_matches=%lu\r\n", (unsigned long)markers,
+             (unsigned long)matches);
+    shell_print(line);
+}
+#endif
+
 void diag_dispatch(const char *args) {
     if (strcmp(args, "pipeline") == 0) {
         diag_pipeline();
@@ -112,7 +132,15 @@ void diag_dispatch(const char *args) {
         diag_wedge();
     } else if (strcmp(args, "telemetry") == 0) {
         diag_telemetry();
+#if HELM_HAS_SPORT_UART
+    } else if (strcmp(args, "sport") == 0) {
+        diag_sport();
+#endif
     } else {
-        shell_print("usage: diag <subcommand> -- available: pipeline, wedge, telemetry\r\n");
+        shell_print("usage: diag <subcommand> -- available: pipeline, wedge, telemetry"
+#if HELM_HAS_SPORT_UART
+                    ", sport"
+#endif
+                    "\r\n");
     }
 }

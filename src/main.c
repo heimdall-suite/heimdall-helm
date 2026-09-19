@@ -27,6 +27,9 @@
 #if HELM_FEATURE_CLI
 #include "cli.h"
 #endif
+#if HELM_FEATURE_TELEMETRY_SPORT && HELM_HAS_SPORT_UART
+#include "sport.h"
+#endif
 
 extern void xPortSysTickHandler(void);
 
@@ -166,6 +169,15 @@ int main(void) {
     // #18/#19 add the S.Port/CRSF protocol adapters that actually put it
     // on a wire). See .docs/architecture/telemetry.md.
     telemetry_start();
+#endif
+
+#if HELM_FEATURE_TELEMETRY_SPORT && HELM_HAS_SPORT_UART
+    // Start the S.Port protocol adapter (issue #18) -- answers this
+    // board's own poll slot with TELEM_FIELD_TEST's current value, over
+    // UART7/PE8 ("TX7" silk). Independent flags, same reasoning as
+    // HELM_FEATURE_CLI/HELM_HAS_ROM_BOOTLOADER_DFU above: "wants S.Port"
+    // and "has a ported S.Port UART transport" aren't the same thing.
+    sport_start();
 #endif
 
     // Start the heartbeat task to physically show the board is live. Useful

@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define HELM_BOARD_NAME "matek_h743"
 
@@ -67,6 +69,78 @@ void board_sbus_uart_init(void);
    self-resynchronizing without sbus.c needing any byte-level resync
    state machine of its own. */
 bool board_sbus_uart_take_frame(uint8_t out[SBUS_UART_FRAME_LEN]);
+
+/* S.Port UART -- UART7/PE8 (silk-labeled "TX7" on this board), single-
+   wire half-duplex, register-level LL driver, no HAL_UART_HandleTypeDef
+   involved for this peripheral at all. Ported from aoa-boat-controller's
+   own SportUart (lib/SPort/H743/SportUart), the same bench-verified
+   driver that got a real receiver responding on this exact board/pin --
+   not a from-scratch derivation. Carries over several hard-won, bench-
+   confirmed findings from that project's own bring-up (its own
+   SportUart.cpp/decisions.md have the full history):
+
+   - Push-pull output, NOT open-drain -- an earlier "open-drain is
+     necessary" belief there turned out to be a measurement-chain
+     artifact; push-pull (matching Betaflight's own IOCFG_AF_PP for a
+     S.Port-capable TX pin) is what actually produced real, structured
+     bus traffic on a validated capture.
+   - Both TX and RX invert bits set -- S.Port is electrically inverted,
+     same reasoning as SBUS's own RXINV bit (see board_sbus_uart_init()'s
+     comment), just both directions here since this is a real bus, not
+     RX-only.
+   - HAL's own interrupt-driven UART transmit (HAL_UART_Transmit_IT) was
+     bench-confirmed (logic analyzer) to silently drop multi-byte writes
+     in back-to-back sends -- exactly what a stuffed S.Port frame needs.
+     This driver bypasses HAL_UART_HandleTypeDef entirely for this
+     peripheral and matches Betaflight's real mechanism instead
+     (src/platform/STM32/serial_uart_ll.c): TXEIE armed once, a single
+     ISR keeps re-firing on its own as the shift register empties,
+     draining a plain ring buffer.
+   - TE/RE are kept mutually exclusive (CR1 bits toggled, never both on),
+     switching back to listening only once TC -- transmission genuinely
+     complete, not just TXE/queue-empty -- confirms the last bit has
+     actually left the shift register. Switching early would let the
+     receiver's own transmitted bytes echo back into this board's RX path.
+
+   Real spec margin (ArduPilot's AP_Frsky_SPort.cpp, cross-checked on
+   aoa-boat-controller's own bench): ~11.65ms poll-to-poll period, ~1.38ms
+   per frame, leaving ~6.5ms of response margin -- FreeRTOS task-
+   notification wake latency (this driver's ISR notifies a task rather
+   than running protocol logic itself, see board_sport_uart_set_rx_task())
+   is comfortably within that, same order of margin aoa-boat-controller's
+   own bench measurement (5us reaction latency, ~1300x the required
+   margin) already confirmed for a materially similar dispatch path. */
+
+/* Registers the task this driver's ISR notifies (vTaskNotifyGiveFromISR)
+   on every received byte -- call once, before board_sport_uart_init(),
+   from the S.Port module's own start function. The ISR itself does no
+   protocol logic (RXNE just fills a ring buffer and notifies); poll
+   detection and frame handling happen in the notified task, keeping
+   FreeRTOS API use (telemetry_get() and the queue read underneath it)
+   in task context, never ISR context. */
+void board_sport_uart_set_rx_task(TaskHandle_t task);
+
+/* Configures PE8 (AF7/UART7_TX) push-pull + pull-up + high-speed, 8N1 +
+   57600 (S.Port's fixed baud), both invert bits, single-wire half-duplex
+   (HDSEL), RXNE always enabled, UART7 NVIC priority 5 (this project's
+   established floor for any ISR running alongside FreeRTOS -- see
+   board_sbus_uart_init()'s own comment). Call once from the S.Port
+   module's start function, after board_sport_uart_set_rx_task(). */
+void board_sport_uart_init(void);
+
+/* True if at least one received byte is waiting in the RX ring buffer. */
+bool board_sport_uart_available(void);
+
+/* Pops and returns the oldest waiting RX byte. Only valid after
+   board_sport_uart_available() returned true. */
+uint8_t board_sport_uart_read_byte(void);
+
+/* Queues `length` bytes for transmission and switches the line to drive
+   mode -- non-blocking, returns immediately; the actual byte-by-byte
+   shifting happens in UART7's own ISR. S.Port frames are at most
+   SPORT_MAX_STUFFED_BYTES (see lib/telemetry/sport.c) bytes, comfortably
+   inside this driver's ring buffer. */
+void board_sport_uart_write(const uint8_t *data, uint8_t length);
 
 /* IWDG1 (STM32H7's independent, LSI-clocked watchdog) -- issue #5,
    .docs/architecture/module-architecture.md's "Crash safety" section.
