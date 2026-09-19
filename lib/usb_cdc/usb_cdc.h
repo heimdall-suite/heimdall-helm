@@ -4,13 +4,15 @@
 #include <stdint.h>
 
 /* Minimal USB CDC-ACM (virtual COM port) transport -- one implementation
-   per chip with a USB device peripheral (currently just stm32h7.c, which
-   wires ST's USB Device CDC middleware to this board's OTG_FS; see
-   boards/matek_h743/usbd_conf.c/usbd_desc.c for the board-specific half
-   of that wiring). See lib/README.md's chip-not-board convention and
-   platformio.ini's custom_helm_usb_cdc/scripts/add_usb_cdc.py for how a
-   board opts in. This is the transport lib/cli runs over (via lib/shell,
-   which itself has no USB dependency -- see its own header). */
+   per chip with a USB device peripheral: stm32h7.c (matek_h743's
+   OTG_FS) and stm32f1.c (afroflight32's plain "USB" peripheral, #12),
+   each wiring ST's USB Device CDC middleware to that chip's HAL_PCD
+   driver; see boards/<target>/usbd_conf.c/usbd_desc.c for the
+   board-specific half of that wiring. See lib/README.md's chip-not-board
+   convention and platformio.ini's custom_helm_usb_cdc/
+   scripts/add_usb_cdc.py for how a board opts in. This is the transport
+   lib/cli runs over (via lib/shell, which itself has no USB dependency --
+   see its own header). */
 
 /* Brings up the USB device stack and starts CDC enumeration. Call once,
    after HAL_Init()/board_init() (needs SysTick running for HAL_Delay/

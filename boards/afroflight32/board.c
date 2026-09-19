@@ -41,6 +41,22 @@ static void system_clock_config(void) {
     if (HAL_RCC_ClockConfig(&clkInit, FLASH_LATENCY_2) != HAL_OK) {
         Error_Handler();
     }
+
+    /* F103's "USB" peripheral needs exactly 48MHz, derived from the PLL
+       via a fixed /1 or /1.5 prescaler (no other ratios exist) -- 72MHz
+       PLL / 1.5 = 48MHz exactly, the standard combination for this
+       family (RCC_CFGR's USBPRE bit resets to this same /1.5 setting by
+       default, but set it explicitly rather than rely on that reset
+       value matching -- same reasoning as every other clock field this
+       function sets explicitly instead of leaving implicit). Needed for
+       #12's USB CDC transport; harmless before that lands, since nothing
+       enables the USB peripheral itself until usb_cdc_init() runs. */
+    RCC_PeriphCLKInitTypeDef periphClkInit = {0};
+    periphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
+    periphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
+    if (HAL_RCCEx_PeriphCLKConfig(&periphClkInit) != HAL_OK) {
+        Error_Handler();
+    }
 }
 
 void board_init(void) {
