@@ -1,96 +1,118 @@
 #include "usb_cdc.h"
-#include "usbd_cdc.h"
-#include "usbd_core.h"
-#include "usbd_desc.h"
+#include "stm32f1xx_hal.h"
 
-/* CDC-ACM transport over STM32F1's USB Device middleware -- issue #12.
-   Same role as stm32h7.c (owns the USBD_HandleTypeDef and the CDC class
-   fops ST's usbd_cdc_if_template.c leaves for the integrator to fill
-   in), but not a copy-paste of it: framework-stm32cubef1 ships an older
-   revision of ST's CDC class (Middlewares/ST/STM32_USB_Device_Library/
-   Class/CDC) whose USBD_CDC_ItfTypeDef has no TransmitCplt callback --
-   confirmed by diffing both frameworks' usbd_cdc.h before writing this,
-   not assumed. Not a problem: usb_cdc_write() below never relied on that
-   callback firing, it already polls the class handle's TxState directly,
-   same as stm32h7.c does. The board-specific half (GPIO/clock/NVIC,
-   PMA endpoint layout, descriptors) lives in boards/afroflight32/
-   instead of here -- see that board's usbd_conf.c for the real-source
-   derivation (ST's STM3210E_EVAL CDC_Standalone example). */
+/* CLI transport for afroflight32 -- NOT a native USB CDC device. This
+   chip's own USB peripheral is never touched here at all.
+
+   Confirmed against aoa-boat-controller's real, currently-running
+   firmware on this exact physical board (src/Naze32/main.cpp,
+   include/pins_naze32.h): its "USB" port is an onboard USB-serial
+   converter chip wired to USART1 (PA9 TX / PA10 RX), doing the
+   USB<->UART conversion entirely in external hardware, invisible to
+   this MCU -- confirmed explicitly in that source: "No native USB CDC
+   on this board (Serial1 is a plain UART through an external
+   USB-serial converter chip...)". PA11/PA12 (this chip's native USB
+   D-/D+ pins) aren't wired to that connector at all -- PA11 is actually
+   this board's OUT2 servo-PWM pad on the real hardware.
+
+   An earlier version of this file wrongly assumed a native USB Device
+   peripheral, mirroring matek_h743/lib/usb_cdc/stm32h7.c's shape,
+   before aoa-boat-controller's real source was checked -- see issue
+   #12's history for that correction. Kept the same usb_cdc.h interface
+   deliberately: from lib/cli's perspective (and the host's), this still
+   presents as a normal serial console over what the user plugs a USB
+   cable into -- which transport achieves that is exactly what this
+   header exists to hide.
+
+   115200 baud, 8N1: aoa-boat-controller's own confirmed working value
+   for this exact UART/converter pairing (Serial1.begin(115200) in that
+   project's main.cpp), not picked fresh here. */
 
 #define RX_RING_SIZE 256U
+
+static UART_HandleTypeDef huart1;
+static uint8_t rxByte;
 
 static uint8_t rxRing[RX_RING_SIZE];
 static volatile uint32_t rxHead = 0; /* next slot the ISR writes */
 static volatile uint32_t rxTail = 0; /* next slot the reader takes */
 
-static USBD_HandleTypeDef hUsbDeviceFS;
-static uint8_t cdcRxBuffer[CDC_DATA_FS_MAX_PACKET_SIZE];
-
-static int8_t cdc_init(void);
-static int8_t cdc_deinit(void);
-static int8_t cdc_control(uint8_t cmd, uint8_t *pbuf, uint16_t length);
-static int8_t cdc_receive(uint8_t *buf, uint32_t *len);
-
-static USBD_CDC_ItfTypeDef cdcFops = {
-    cdc_init,
-    cdc_deinit,
-    cdc_control,
-    cdc_receive,
-};
-
-/* ST CDC class callback: called once the class is registered. Hands the
-   class our fixed receive buffer to fill on each incoming packet. */
-static int8_t cdc_init(void) {
-    USBD_CDC_SetTxBuffer(&hUsbDeviceFS, NULL, 0);
-    USBD_CDC_SetRxBuffer(&hUsbDeviceFS, cdcRxBuffer);
-    return (int8_t)USBD_OK;
-}
-
-/* ST CDC class callback: called on class deinit. Nothing to release --
-   cdcRxBuffer is static, not allocated. */
-static int8_t cdc_deinit(void) {
-    return (int8_t)USBD_OK;
-}
-
-/* ST CDC class callback: handles CDC control requests (SET_LINE_CODING
-   etc.). */
-static int8_t cdc_control(uint8_t cmd, uint8_t *pbuf, uint16_t length) {
-    (void)cmd;
-    (void)pbuf;
-    (void)length;
-    /* No line-coding/control-line state to track for this CLI -- the
-       host's terminal settings don't change how we frame bytes. */
-    return (int8_t)USBD_OK;
-}
-
-/* ST CDC class callback: called with each received packet. Copies it into
-   our own ring buffer so usb_cdc_read() can drain it outside IRQ context,
-   then re-arms the endpoint for the next packet. */
-static int8_t cdc_receive(uint8_t *buf, uint32_t *len) {
-    /* Runs in USB IRQ context. Drop bytes on ring overflow rather than
-       block -- a CLI console losing a byte under overflow is fine, an
-       ISR blocking is not. */
-    for (uint32_t i = 0; i < *len; i++) {
-        uint32_t const next = (rxHead + 1U) % RX_RING_SIZE;
-        if (next != rxTail) {
-            rxRing[rxHead] = buf[i];
-            rxHead = next;
-        }
+/* HAL callback (weak override): fires once per received byte. Byte-at-a-
+   time interrupt receive, not DMA -- this is a low-rate (115200 baud,
+   ~11.5KB/s) interactive CLI stream of unknown/unbounded length, not a
+   fixed-size framed protocol like SBUS, so there's no natural DMA
+   transfer size to arm ahead of time the way board_sbus_uart_rearm()
+   has for matek_h743. */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance != USART1) {
+        return;
     }
 
-    USBD_CDC_ReceivePacket(&hUsbDeviceFS);
-    return (int8_t)USBD_OK;
+    /* Drop bytes on ring overflow rather than block -- a CLI console
+       losing a byte under overflow is fine, an ISR blocking is not,
+       same reasoning as stm32h7.c's own USB CDC ring buffer. */
+    uint32_t const next = (rxHead + 1U) % RX_RING_SIZE;
+    if (next != rxTail) {
+        rxRing[rxHead] = rxByte;
+        rxHead = next;
+    }
+
+    HAL_UART_Receive_IT(&huart1, &rxByte, 1);
+}
+
+/* HAL callback (weak override): GPIO/clock/NVIC for USART1 -- PA9/PA10
+   is this chip's default (non-remapped) USART1 mapping on every F103
+   package, a fixed silicon fact, not a board-specific pin choice. */
+void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
+    if (huart->Instance != USART1) {
+        return;
+    }
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_USART1_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_9;
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &gpioInit);
+
+    gpioInit.Pin = GPIO_PIN_10;
+    gpioInit.Mode = GPIO_MODE_INPUT;
+    gpioInit.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOA, &gpioInit);
+
+    /* Priority 5: this project's established floor for any ISR that runs
+       alongside FreeRTOS -- same reasoning as every other peripheral ISR
+       in this repo (see e.g. matek_h743/board.c's UART IRQ comment).
+       HAL_UART_RxCpltCallback above only touches a plain ring buffer, no
+       FreeRTOS API today, but keeping every peripheral ISR at or below
+       this floor by default avoids that becoming a live bug later. */
+    HAL_NVIC_SetPriority(USART1_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+}
+
+/* Weak override of the CMSIS startup file's default handler
+   (startup_stm32f103xb.s : USART1_IRQHandler -> Default_Handler). */
+void USART1_IRQHandler(void) {
+    HAL_UART_IRQHandler(&huart1);
 }
 
 void usb_cdc_init(void) {
-    USBD_Init(&hUsbDeviceFS, &HELM_USBD_Desc, 0);
-    USBD_RegisterClass(&hUsbDeviceFS, USBD_CDC_CLASS);
-    USBD_CDC_RegisterInterface(&hUsbDeviceFS, &cdcFops);
-    USBD_Start(&hUsbDeviceFS);
+    huart1.Instance = USART1;
+    huart1.Init.BaudRate = 115200;
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    /* No separate USB supply-rail voltage detector to enable here --
-       that's an H7-specific quirk (see stm32h7.c's own comment), not a
-       thing on F103's USB peripheral. */
+    if (HAL_UART_Init(&huart1) != HAL_OK) {
+        Error_Handler();
+    }
+
+    HAL_UART_Receive_IT(&huart1, &rxByte, 1);
 }
 
 uint32_t usb_cdc_read(uint8_t *buf, uint32_t maxLen) {
@@ -104,30 +126,10 @@ uint32_t usb_cdc_read(uint8_t *buf, uint32_t maxLen) {
 }
 
 void usb_cdc_write(const uint8_t *buf, uint32_t len) {
-    USBD_CDC_HandleTypeDef *cdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
-    if (cdc == NULL) {
-        return; /* not enumerated yet -- nothing to write to */
-    }
-
-    uint32_t sent = 0;
-    while (sent < len) {
-        uint32_t const chunk = (len - sent) > CDC_DATA_FS_MAX_PACKET_SIZE ? CDC_DATA_FS_MAX_PACKET_SIZE
-                                                                           : (len - sent);
-
-        /* Wait for the previous chunk to actually go out -- this
-           middleware revision has no TransmitCplt callback to wait on
-           instead (see this file's header comment), so polling TxState
-           directly is the only option here, not just the simpler one.
-           Bounded spin, not a real timeout: acceptable for a debug
-           console that only ever sends short lines, not for a link this
-           project depends on for control-relevant data. */
-        uint32_t guard = 1000000U;
-        while (cdc->TxState != 0U && guard > 0U) {
-            guard--;
-        }
-
-        USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t *)(buf + sent), (uint16_t)chunk);
-        USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-        sent += chunk;
-    }
+    /* Blocking, generous timeout -- acceptable for a debug console that
+       only ever sends short lines (SHELL_MAX_LINE_LEN, lib/shell/
+       shell.h, is 64), not for a link this project depends on for
+       control-relevant data. Cast to uint16_t is safe for the same
+       reason -- len never approaches 65535 for a line-based CLI. */
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)len, 1000);
 }
