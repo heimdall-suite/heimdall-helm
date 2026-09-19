@@ -30,7 +30,7 @@ multiple board targets stay in scope.
 | Target (`platformio.ini` env) | MCU | Status |
 |---|---|---|
 | `matek_h743` | STM32H743 (Cortex-M7, dual-precision FPU) | Flashed/bench-verified over USB DFU; real SBUS decode bench-verified (see Status) |
-| `afroflight32` | STM32F103 (Cortex-M3, no FPU) | Builds, real clock config, deliberately reduced feature set (20KB RAM); not yet flashed |
+| `afroflight32` | STM32F103 (Cortex-M3, no FPU) | Flashed/bench-verified over its UART ROM bootloader; real clock config, deliberately reduced feature set (20KB RAM) |
 | `nexus_xr` | STM32F722 (Cortex-M7, single-precision FPU) | Structural placeholder only — `board.c` intentionally `#error`s, no confirmed pin/clock data exists yet |
 
 See [.docs/hardware.md](.docs/hardware.md) for details, and
@@ -84,7 +84,9 @@ board's own bench-confirmed HSE/PLL values). `nexus_xr` is structurally
 present but intentionally not buildable (see table above). `matek_h743`
 is flashed and bench-verified on real hardware over USB DFU (`pio run -e
 matek_h743 -t upload`, no ST-Link/CubeProgrammer needed); `afroflight32`
-isn't flashed yet.
+is flashed and bench-verified too, over its UART ROM bootloader (its CLI
+was bench-verified this way in #13, fixing a VTOR + heap-exhaustion bug
+in the process).
 
 Past bring-up, a stub Input→Mapping→Control→Output→Servo chain runs on
 `matek_h743` (each stage its own FreeRTOS task/queue, registered with a

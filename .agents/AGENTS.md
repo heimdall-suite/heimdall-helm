@@ -51,9 +51,10 @@ header comment for the full story. It won't get the `dfu` bootloader-jump
 command regardless -- `HELM_HAS_ROM_BOOTLOADER_DFU` is a separate
 capability from `HELM_FEATURE_CLI`, not implied by it (see
 `boards/afroflight32/board_features.h`), and this board's bootloader has
-to be entered manually. None of this is bench-verified yet -- built and
-linking, not flashed to the real unit. `nexus_xr` remains unbuildable on
-purpose (see above).
+to be entered manually. Both the flash-over-UART path and the CLI running
+over that same UART bridge are now bench-verified on the real unit (#13,
+which also fixed a VTOR + heap-exhaustion bug found in the process).
+`nexus_xr` remains unbuildable on purpose (see above).
 
 The real module/scheduler architecture (extensibility, fault isolation/HA
 — what can and can't fail) is NOT designed yet. `src/main.c` is a bring-up
