@@ -63,10 +63,11 @@
    none" the way an earlier comment on this line did. */
 #define HELM_HAS_DEBUG_LED 1
 
-/* No IWDG driver ported for STM32F1 yet -- issue #5 starts with
-   matek_h743 (real bench-derived config) and ports this separately,
-   same standard as every other register-level decision here. */
-#define HELM_HAS_IWDG 0
+/* IWDG ported for STM32F1 and bench-confirmed on this exact board --
+   issue #11 (boards/afroflight32/board.c's board_iwdg_init()/
+   board_iwdg_refresh(), see that file's own comment for the
+   diag-wedge verification run). */
+#define HELM_HAS_IWDG 1
 
 /* HELM_RX_DEFAULT_PROTOCOL_*: compile-time fallback for which lib/rx/
    driver rx_start() binds, used until HELM_FEATURE_PARAMS_PERSIST's

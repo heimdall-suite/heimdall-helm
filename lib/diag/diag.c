@@ -48,7 +48,11 @@ static void wedge_task(void *arg) {
    Bench-verified on matek_h743 (issue #5, 2026-09-19): running this
    dropped the board's USB CDC enumeration for ~200ms and it came back
    with a fresh (~1s) uptime, confirming the IWDG backstop actually
-   resets the board on a wedge, not just in theory. */
+   resets the board on a wedge, not just in theory.
+
+   Also bench-verified on afroflight32 (issue #11, 2026-09-19), over the
+   CLI's UART/CP210x transport rather than USB CDC: `status` before and
+   after showed uptime drop from 31241ms to 581ms, same signal. */
 static void diag_wedge(void) {
     shell_print("wedging a task above supervisor priority -- IWDG should reset the board shortly...\r\n");
     xTaskCreate(wedge_task, "wedge", configMINIMAL_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);

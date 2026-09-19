@@ -98,13 +98,17 @@ and let IWDG reset the MCU. A wedged task that stops the supervisor's
 pass from running has the same effect. `board_init()` / output init are
 responsible for coming up in a safe state on reboot.
 
-Implemented on `matek_h743` (issue #5): `lib/supervisor/supervisor.c`'s
-task starts and feeds IWDG1 itself, gated on `HELM_HAS_IWDG`; the
-register-level init/refresh calls it makes live in
-`boards/matek_h743/board.c`, same standard as every other clock/
-peripheral decision in this repo. Not yet ported to `afroflight32`
-(STM32F1) or `nexus_xr` (STM32F7, also still blocked on its hardware
-`#error`) — `HELM_HAS_IWDG` is 0 on both.
+Implemented on `matek_h743` (issue #5) and `afroflight32` (issue #11):
+`lib/supervisor/supervisor.c`'s task starts and feeds IWDG itself, gated
+on `HELM_HAS_IWDG`; the register-level init/refresh calls it makes live
+in each board's own `board.c`, same standard as every other clock/
+peripheral decision in this repo — the two implementations differ in
+their prescaler/reload numbers (different nominal LSI frequency per
+chip family) despite sharing the same register shape. Both
+bench-verified via the CLI's `diag wedge` (`lib/diag/diag.c`): starving
+the supervisor and confirming the board actually resets. Not yet ported
+to `nexus_xr` (STM32F7, still blocked on its hardware `#error`) —
+`HELM_HAS_IWDG` is 0 there.
 
 ## Case study: Input (RX), dual-protocol selection
 
