@@ -26,7 +26,15 @@
 
    115200 baud, 8N1: aoa-boat-controller's own confirmed working value
    for this exact UART/converter pairing (Serial1.begin(115200) in that
-   project's main.cpp), not picked fresh here. */
+   project's main.cpp), not picked fresh here.
+
+   Bench-verified on the real unit (#13): `status`/`help`/`diag pipeline`
+   all round-trip correctly. Getting there also needed two fixes outside
+   this file -- src/main.c's SCB->VTOR correction (this board's
+   bootloader-jump entry otherwise leaves interrupts, including SysTick,
+   vectoring into the ROM bootloader's own stale table) and a
+   configTOTAL_HEAP_SIZE increase in FreeRTOSConfig.h -- see both files'
+   own comments. */
 
 #define RX_RING_SIZE 256U
 
@@ -55,6 +63,36 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (next != rxTail) {
         rxRing[rxHead] = rxByte;
         rxHead = next;
+    }
+
+    HAL_UART_Receive_IT(&huart1, &rxByte, 1);
+}
+
+/* HAL callback (weak override): fires when HAL_UART_IRQHandler sees a
+   parity/framing/noise/overrun error, which HAL treats as fatal to the
+   in-flight interrupt-driven reception -- it aborts the
+   HAL_UART_Receive_IT() transfer entirely before calling this. Real
+   risk here, not hypothetical: the STM32 ROM serial bootloader uses this
+   exact USART1 peripheral to receive the firmware image over the same
+   wire moments before jumping to this app (that's how `pio run -t
+   upload` with upload_protocol = serial gets code onto this board at
+   all -- see platformio.ini's own comment on that). Without a full
+   hardware reset in between (BOOT0 unstrapped alone doesn't force one,
+   only an actual reset/power-cycle re-samples it), a leftover framing/
+   overrun condition on this peripheral is a real way for the very first
+   HAL_UART_Receive_IT arm in usb_cdc_init() to immediately abort with no
+   further symptom -- no crash, no LED (this board has none,
+   HELM_HAS_DEBUG_LED 0), just permanently dead RX despite TX and
+   everything else working fine, which is exactly indistinguishable from
+   "board never booted" without a debug probe. HAL's own default weak
+   HAL_UART_ErrorCallback does nothing, so without this override that one
+   error is unrecoverable. Same bug class (and same fix -- just re-arm)
+   as matek_h743/board.c's own HAL_UART_ErrorCallback for its SBUS UART,
+   found there for an unrelated reason (line noise) but the underlying
+   HAL behavior is identical. */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance != USART1) {
+        return;
     }
 
     HAL_UART_Receive_IT(&huart1, &rxByte, 1);

@@ -90,6 +90,29 @@ int main(void) {
     bootloader_jump_if_requested();
 #endif
 
+#if defined(STM32F1)
+    // This board's ROM bootloader is entered with BOOT0 strapped high,
+    // which aliases address 0 to system memory (the bootloader's own
+    // vector table) for the CPU's whole session -- that aliasing, and
+    // SCB->VTOR itself, are only re-sampled/reset on an actual reset,
+    // never touched by the bootloader's raw "Go" jump into our code
+    // (just a PC/SP load, not a reset). CMSIS's own SystemInit()
+    // (system_stm32f1xx.c) never sets VTOR either unless
+    // USER_VECT_TAB_ADDRESS is defined, which it isn't by default. Net
+    // effect: our code runs fine at first (a HardFault-free jump doesn't
+    // need VTOR), but ANY actual interrupt -- including SysTick, which
+    // HAL_Delay() and every FreeRTOS task delay depend on -- vectors
+    // into the STALE bootloader table instead of ours, since only an
+    // actual reset (not this software jump) re-samples BOOT0 and
+    // updates the address-0 alias VTOR effectively reads through.
+    // Bench-confirmed on this exact board during #13's bring-up: without
+    // this line, execution ran fine right up to the first place
+    // anything depended on a real interrupt firing, then silently hung
+    // forever. Fixing this here, as early as possible, before anything
+    // relies on an interrupt firing correctly.
+    SCB->VTOR = FLASH_BASE;
+#endif
+
     // Bring up HAL's own tick/timebase, then this board's clock tree and
     // any other early peripheral init board.c owns.
     HAL_Init();

@@ -33,9 +33,15 @@
    USB -- this board's "USB" port is an onboard USB-serial converter chip
    wired to a plain UART (USART1), confirmed against aoa-boat-controller's
    real firmware for this exact physical board (see that file's own
-   header comment). Still not bench-verified on real hardware. Separate
-   capability from HELM_HAS_ROM_BOOTLOADER_DFU below -- don't assume one
-   implies the other. */
+   header comment). Bench-verified on the real unit: `status`/`help`/
+   `diag pipeline` all round-trip correctly over it. Getting there also
+   required src/main.c's SCB->VTOR fix (this board's bootloader-jump
+   entry leaves interrupts vectoring into the ROM bootloader's own stale
+   table otherwise) and bumping configTOTAL_HEAP_SIZE in
+   FreeRTOSConfig.h (6KB measured too small once vTaskStartScheduler()'s
+   own IDLE/timer tasks are counted) -- see both files' own comments.
+   Separate capability from HELM_HAS_ROM_BOOTLOADER_DFU below -- don't
+   assume one implies the other. */
 #define HELM_FEATURE_CLI 1
 
 /* This board doesn't get the CLI's `dfu` bootloader-jump command even
@@ -48,9 +54,14 @@
    keep it out of the build without needing lib/bootloader ported here. */
 #define HELM_HAS_ROM_BOOTLOADER_DFU 0
 
-/* No board_led_toggle() implementation exists for this board yet -- no
-   LED pin bench-confirmed here, same standard as the flags above. */
-#define HELM_HAS_DEBUG_LED 0
+/* board_led_toggle() (board.h) drives PB4, the "CAL" LED -- pin/polarity
+   confirmed against aoa-boat-controller's real firmware for this exact
+   physical board (include/pins_naze32.h's PIN_CAL_LED). This board does
+   physically have onboard LEDs; this flag was 0 only because nothing in
+   this project had implemented the driver yet, not because the hardware
+   was in doubt -- don't conflate "not wired up here yet" with "board has
+   none" the way an earlier comment on this line did. */
+#define HELM_HAS_DEBUG_LED 1
 
 /* No IWDG driver ported for STM32F1 yet -- issue #5 starts with
    matek_h743 (real bench-derived config) and ports this separately,

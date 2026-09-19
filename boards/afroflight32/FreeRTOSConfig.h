@@ -6,11 +6,20 @@
 #define configTICK_RATE_HZ 1000
 #define configMAX_PRIORITIES 7
 #define configMINIMAL_STACK_SIZE 96
-/* 20KB total RAM on this board -- deliberately small heap, leaves room
-   for stacks/.data/.bss/HAL buffers. TODO: tune once real modules exist
-   and their actual usage is measured; this is a starting guess, not a
-   bench-verified budget. */
-#define configTOTAL_HEAP_SIZE (6 * 1024)
+/* Bench-measured on real hardware (issue #13's bring-up): 6KB was too
+   small -- the previous guess here undercounted vTaskStartScheduler()'s
+   own internal task creation (IDLE + timer-service, on top of every
+   module's own xTaskCreate()/xQueueCreate() from src/main.c). Confirmed
+   via LED checkpoint bisection: all 8 application tasks + their queues
+   created successfully (supervisor/rx/mapping/control/output/servo/cli/
+   heartbeat), then vTaskStartScheduler() itself hit
+   vApplicationMallocFailedHook() creating its own IDLE task -- the heap
+   was exhausted by ~1KB at exactly that point, not before. 10KB leaves
+   comfortable margin (this board still has 20KB RAM total; static
+   usage elsewhere is under 2KB) without treating this the way the
+   removed comment did ("deliberately small... TODO tune once measured")
+   -- it's now actually measured, not a guess. */
+#define configTOTAL_HEAP_SIZE (10 * 1024)
 #define configMAX_TASK_NAME_LEN 12
 #define configUSE_16_BIT_TICKS 0
 #define configUSE_MUTEXES 1

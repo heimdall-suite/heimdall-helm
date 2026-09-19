@@ -1,8 +1,8 @@
 # CLI
 
-Status: implemented and bench-verified on `matek_h743` (issue #1). Also
-built for `afroflight32` (#12/#13) but NOT yet bench-verified there — see
-"Which boards have it" below. Not ported to `nexus_xr` at all.
+Status: implemented and bench-verified on both `matek_h743` (issue #1)
+and `afroflight32` (#12/#13) — see "Which boards have it" below. Not
+ported to `nexus_xr` at all.
 
 A command console the host reaches over what looks like a USB virtual COM
 port, so the board can be talked to from a normal serial terminal without
@@ -53,8 +53,26 @@ after finding they'd otherwise fail to link on exactly this board).
 | Board | `HELM_FEATURE_CLI` | `HELM_HAS_ROM_BOOTLOADER_DFU` | `HELM_HAS_DEBUG_LED` |
 |---|---|---|---|
 | `matek_h743` | 1 (bench-verified) | 1 | 1 |
-| `afroflight32` | 1 (NOT bench-verified yet) | 0 (manual BOOT0-strap instead) | 0 |
+| `afroflight32` | 1 (bench-verified) | 0 (manual BOOT0-strap instead) | 1 (bench-verified, PB4 "CAL" LED) |
 | `nexus_xr` | 0 | 0 | 0 |
+
+Getting `afroflight32`'s CLI actually working on the bench needed two
+fixes beyond the transport/CLI wiring itself, both found during #13's
+bring-up and both still in place as permanent fixes, not workarounds:
+
+- `src/main.c` sets `SCB->VTOR = FLASH_BASE` for STM32F1 boards. This
+  board's bootloader entry (BOOT0 strapped high, then a software "Go"
+  jump, not a real reset) leaves interrupt vectoring pointed at the ROM
+  bootloader's own stale vector table -- code runs fine until the first
+  thing that depends on a real interrupt (SysTick, and therefore every
+  `HAL_Delay()`/task delay), which then hangs forever. Only a genuine
+  reset re-samples BOOT0 and fixes this on its own.
+- `boards/afroflight32/FreeRTOSConfig.h`'s `configTOTAL_HEAP_SIZE` went
+  from 6KB to 10KB -- 6KB was an unmeasured guess that turned out too
+  small once `vTaskStartScheduler()`'s own IDLE/timer-service task
+  creation is counted alongside this board's 8 application tasks +
+  queues. Bisected via LED checkpoint markers (no debug probe available)
+  before landing on this as the actual cause.
 
 ## Connecting
 
