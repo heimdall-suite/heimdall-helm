@@ -7,7 +7,13 @@
    before trusting -- that project's hardware bring-up on this board was
    still active as of the last check (2026-09-17). */
 #define HELM_HAS_IMU 1   /* MPU6500, I2C -- confirmed */
-#define HELM_HAS_BARO 0  /* bring-up in progress upstream, chip/wiring not confirmed here yet -- TODO */
+#define HELM_HAS_BARO 1  /* BMP280, I2C2 (same bus as the IMU, different address:
+                             0x76 vs the IMU's 0x68) -- bench-confirmed in
+                             aoa-boat-controller via its "baroscan" probe
+                             (chip_id register 0xD0 read back 0x58, the exact
+                             BMP280 match); this doc's own earlier "not
+                             confirmed yet" was stale, corrected once that was
+                             checked directly rather than assumed absent */
 #define HELM_HAS_MAG 0   /* not confirmed wired -- TODO */
 #define HELM_HAS_GPS 0   /* not confirmed wired -- TODO */
 #define HELM_HAS_BLACKBOX_STORAGE 1 /* 2MB SPI NOR on SPI2, all 4 pins free -- confirmed */
