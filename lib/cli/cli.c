@@ -12,7 +12,7 @@
 #include "usb_cdc.h"
 #include <stdio.h>
 
-#if HELM_HAS_ROM_BOOTLOADER_DFU
+#if HELM_HAS_ROM_BOOTLOADER_JUMP
 #include "bootloader.h"
 #endif
 
@@ -36,18 +36,24 @@ static void cmd_status(const char *args) {
     shell_print(line);
 }
 
-#if HELM_HAS_ROM_BOOTLOADER_DFU
-/* `dfu` command handler: reboots into the ROM USB DFU bootloader from the
-   same USB cable the CLI itself runs over -- the reason this feature was
-   built in the first place, closing the loop with lib/bootloader so no
-   BOOT-button/ST-Link is needed to reflash. Gated on
-   HELM_HAS_ROM_BOOTLOADER_DFU, not just HELM_FEATURE_CLI (issue #13) --
-   a board can have a CLI without a ported bootloader-jump (afroflight32
-   is exactly that case: lib/bootloader is lib_ignore'd there entirely,
-   so this would fail to link if registered unconditionally). */
+#if HELM_HAS_ROM_BOOTLOADER_JUMP
+/* `dfu` command handler: reboots straight into this chip's ROM
+   bootloader over the same cable the CLI itself runs over -- the reason
+   this feature was built in the first place, closing the loop with
+   lib/bootloader so no BOOT-button/ST-Link is needed to reflash. Not
+   necessarily USB DFU class specifically, despite the command's name
+   (kept for muscle-memory/consistency across boards) -- matek_h743's is
+   real USB DFU (lib/bootloader/stm32h7.c), afroflight32's (issue #28,
+   lib/bootloader/stm32f1.c) is the chip's plain UART bootloader (AN3155)
+   instead, reached over the same USART1 the CLI already runs over via
+   the onboard USB-serial converter. Gated on HELM_HAS_ROM_BOOTLOADER_JUMP,
+   not just HELM_FEATURE_CLI (issue #13) -- a board can have a CLI
+   without a ported bootloader-jump (nexus_xr has neither at all; see
+   board_features.h), so this would fail to link if registered
+   unconditionally. */
 static void cmd_dfu(const char *args) {
     (void)args;
-    shell_print("rebooting into ROM DFU bootloader...\r\n");
+    shell_print("rebooting into ROM bootloader...\r\n");
     bootloader_request_dfu();
 }
 #endif
@@ -80,8 +86,8 @@ static void cli_task(void *arg) {
     if (!shell_register("status", "show board name and uptime", cmd_status)) {
         shell_print("WARNING: command table full, \"status\" NOT registered\r\n");
     }
-#if HELM_HAS_ROM_BOOTLOADER_DFU
-    if (!shell_register("dfu", "reboot into the ROM USB DFU bootloader", cmd_dfu)) {
+#if HELM_HAS_ROM_BOOTLOADER_JUMP
+    if (!shell_register("dfu", "reboot into the ROM bootloader", cmd_dfu)) {
         shell_print("WARNING: command table full, \"dfu\" NOT registered\r\n");
     }
 #endif

@@ -21,7 +21,7 @@
 #error "Unknown MCU family -- add its HAL include here for this board."
 #endif
 
-#if HELM_HAS_ROM_BOOTLOADER_DFU
+#if HELM_HAS_ROM_BOOTLOADER_JUMP
 #include "bootloader.h"
 #endif
 #if HELM_FEATURE_CLI
@@ -86,12 +86,12 @@ void SysTick_Handler(void) {
    simply never starts that module's task, rather than every module
    having its own scattered per-board #ifdefs. */
 int main(void) {
-#if HELM_HAS_ROM_BOOTLOADER_DFU
+#if HELM_HAS_ROM_BOOTLOADER_JUMP
     // Check whether the CLI's `dfu` command left a reboot-into-bootloader
     // request behind; if so, jump straight into it and never return.
     // Literal first statement -- before HAL_Init()/board_init() touch any
     // clock or peripheral, see bootloader_jump_if_requested()'s own comment.
-    // Gated on HELM_HAS_ROM_BOOTLOADER_DFU, not HELM_FEATURE_CLI -- issue
+    // Gated on HELM_HAS_ROM_BOOTLOADER_JUMP, not HELM_FEATURE_CLI -- issue
     // #13 fixed this after finding it would otherwise fail to link on a
     // board with a CLI but no bootloader-jump port (lib/bootloader.h's own
     // header comment already documented this as the correct gate; this
@@ -181,7 +181,7 @@ int main(void) {
 
 #if HELM_FEATURE_CLI
     // Start the CLI console task (issue #1) -- `status`/`help`/`diag`
-    // always, `dfu` too on boards with HELM_HAS_ROM_BOOTLOADER_DFU set
+    // always, `dfu` too on boards with HELM_HAS_ROM_BOOTLOADER_JUMP set
     // (see cli.c's own gating on that flag).
     cli_start();
 #endif
@@ -198,7 +198,7 @@ int main(void) {
     // Start the S.Port protocol adapter (issue #18) -- answers this
     // board's own poll slot with TELEM_FIELD_TEST's current value, over
     // UART7/PE8 ("TX7" silk). Independent flags, same reasoning as
-    // HELM_FEATURE_CLI/HELM_HAS_ROM_BOOTLOADER_DFU above: "wants S.Port"
+    // HELM_FEATURE_CLI/HELM_HAS_ROM_BOOTLOADER_JUMP above: "wants S.Port"
     // and "has a ported S.Port UART transport" aren't the same thing.
     sport_start();
 #endif

@@ -54,19 +54,22 @@
    table otherwise) and bumping configTOTAL_HEAP_SIZE in
    FreeRTOSConfig.h (6KB measured too small once vTaskStartScheduler()'s
    own IDLE/timer tasks are counted) -- see both files' own comments.
-   Separate capability from HELM_HAS_ROM_BOOTLOADER_DFU below -- don't
+   Separate capability from HELM_HAS_ROM_BOOTLOADER_JUMP below -- don't
    assume one implies the other. */
 #define HELM_FEATURE_CLI 1
 
-/* This board doesn't get the CLI's `dfu` bootloader-jump command even
-   though HELM_FEATURE_CLI above is on -- entering this chip's bootloader
-   stays a manual (BOOT0-strap) step, unlike matek_h743's software jump
-   (see lib/bootloader/stm32h7.c). Separate capability from
-   HELM_FEATURE_CLI, not just "not ported yet" the same way that flag
-   was -- lib/cli/cli.c's `dfu` command is gated on this flag specifically
-   (issue #13), not on HELM_FEATURE_CLI, so leaving this 0 is enough to
-   keep it out of the build without needing lib/bootloader ported here. */
-#define HELM_HAS_ROM_BOOTLOADER_DFU 0
+/* This board's ROM bootloader-jump is implemented and bench-confirmed
+   (issue #28, lib/bootloader/stm32f1.c) -- the CLI's `dfu` command now
+   works here too, no more manual BOOT0-strap required to reflash.
+   Different mechanism from matek_h743's (this chip's plain UART ROM
+   bootloader, AN3155 protocol, reached over the same USART1/onboard
+   USB-serial converter the CLI itself already uses -- not USB DFU class
+   at all, despite the flag's name carrying over from that board's
+   specific case), same capability shape. Separate flag from
+   HELM_FEATURE_CLI, not just "not ported yet" -- lib/cli/cli.c's `dfu`
+   command is gated on this flag specifically (issue #13), so a board
+   could in principle have one without the other. */
+#define HELM_HAS_ROM_BOOTLOADER_JUMP 1
 
 /* board_led_toggle() (board.h) drives PB4, the "CAL" LED -- pin/polarity
    confirmed against aoa-boat-controller's real firmware for this exact

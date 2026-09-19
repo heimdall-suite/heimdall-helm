@@ -13,15 +13,19 @@ reached: PlatformIO, `framework = stm32cube` (raw HAL/LL, no Arduino) +
 FreeRTOS. Three targets from the start: `matek_h743` and `afroflight32`
 both build and link cleanly with real, bench-derived clock configs;
 `nexus_xr` is structurally present but intentionally `#error`s (no
-confirmed hardware data — see `boards/nexus_xr/board.h`). `matek_h743` is
-now flashed/bench-verified on real hardware over USB DFU (`pio run -e
-matek_h743 -t upload`, no ST-Link/CubeProgrammer involved); `afroflight32`
-does NOT flash via USB DFU (an earlier, now-corrected guess) — its "USB"
-port is an onboard USB-serial converter chip wired to a plain UART, not
-this chip's native USB peripheral, so it flashes over that same UART
-against the STM32's built-in serial bootloader instead, and hasn't been
-bench-verified yet — see `.agents/AGENTS.md` and `.docs/cli.md` for the
-full story. The actual module/scheduler
+confirmed hardware data — see `boards/nexus_xr/board.h`). Both `matek_h743` and `afroflight32` are
+flashed/bench-verified on real hardware, neither via ST-Link/
+CubeProgrammer: `matek_h743` over its native USB DFU bootloader (`pio run
+-e matek_h743 -t upload`); `afroflight32` does NOT flash via USB DFU (an
+earlier, now-corrected guess) — its "USB" port is an onboard USB-serial
+converter chip wired to a plain UART, not this chip's native USB
+peripheral, so it flashes over that same UART against the STM32's
+built-in serial bootloader instead. Both boards' CLIs now have a software
+`dfu` command that jumps straight into their respective ROM bootloader
+(issue #28 added afroflight32's, over the same UART/AN3155 protocol,
+alongside matek_h743's existing USB-DFU one) — no manual BOOT0-strap
+needed for either board anymore. See `.agents/AGENTS.md` and
+`.docs/cli.md` for the full story. The actual module/scheduler
 architecture (extensibility, fault isolation/HA) is still undesigned — the
 current `src/main.c` is a bring-up stub (one heartbeat task per board), not
 the real firmware structure. Confirm architecture direction with the user

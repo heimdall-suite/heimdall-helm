@@ -27,7 +27,7 @@ folder too):
 | Transport | `lib/usb_cdc/` | Whatever byte-stream reaches the host as a COM port, one implementation per chip: `stm32h7.c` (native USB CDC-ACM) and `stm32f1.c` (a plain UART, see this page's intro) |
 | Shell engine | `lib/shell/` | Nothing hardware — line editing, command dispatch, given bytes in/out as function pointers |
 | This project's CLI | `lib/cli/` | Wires `shell` to `usb_cdc`, registers this project's own commands |
-| DFU reboot | `lib/bootloader/` | Software jump into the chip's ROM DFU bootloader, one implementation per chip |
+| ROM bootloader reboot | `lib/bootloader/` | Software jump into the chip's ROM bootloader, one implementation per chip (`stm32h7.c`: USB DFU; `stm32f1.c`: plain UART/AN3155, issue #28) |
 | Bench diagnostics | `lib/diag/` | Bring-up/bench-only subcommands (`pipeline`, `wedge`), all dispatched through the CLI's single `diag` command |
 
 `src/main.c` starts it with a single `cli_start()` call, gated on
@@ -40,20 +40,20 @@ requiring its own bench-confirmed, from-real-source implementation before
 it's turned on (see `lib/bootloader/stm32h7.c`'s header comment for the
 standard) — not just "not built yet". Independent matters here: a board
 can have a CLI without the other two (`lib/cli/cli.c` and `src/main.c`
-both gate their `HELM_HAS_ROM_BOOTLOADER_DFU`-dependent calls on that flag
+both gate their `HELM_HAS_ROM_BOOTLOADER_JUMP`-dependent calls on that flag
 specifically, not on `HELM_FEATURE_CLI` — issue #13 fixed both call sites
 after finding they'd otherwise fail to link on exactly this board).
 
 | Flag | Means |
 |---|---|
 | `HELM_FEATURE_CLI` | Build `lib/shell` + `lib/cli` + `lib/usb_cdc` and start the console task |
-| `HELM_HAS_ROM_BOOTLOADER_DFU` | This chip has a bench-confirmed ROM DFU jump, so the CLI's `dfu` command works |
+| `HELM_HAS_ROM_BOOTLOADER_JUMP` | This chip has a bench-confirmed software jump into its ROM bootloader, so the CLI's `dfu` command works -- not necessarily USB DFU class specifically, see the flag's own comment in `board_features.h` |
 | `HELM_HAS_DEBUG_LED` | `board_led_toggle()` exists and its pin/polarity is bench-confirmed, so `lib/debug/heartbeat.c` has something to blink |
 
-| Board | `HELM_FEATURE_CLI` | `HELM_HAS_ROM_BOOTLOADER_DFU` | `HELM_HAS_DEBUG_LED` |
+| Board | `HELM_FEATURE_CLI` | `HELM_HAS_ROM_BOOTLOADER_JUMP` | `HELM_HAS_DEBUG_LED` |
 |---|---|---|---|
-| `matek_h743` | 1 (bench-verified) | 1 | 1 |
-| `afroflight32` | 1 (bench-verified) | 0 (manual BOOT0-strap instead) | 1 (bench-verified, PB4 "CAL" LED) |
+| `matek_h743` | 1 (bench-verified) | 1 (USB DFU, `lib/bootloader/stm32h7.c`) | 1 |
+| `afroflight32` | 1 (bench-verified) | 1 (plain UART ROM bootloader, AN3155 protocol, `lib/bootloader/stm32f1.c`, issue #28) | 1 (bench-verified, PB4 "CAL" LED) |
 | `nexus_xr` | 0 | 0 | 0 |
 
 Getting `afroflight32`'s CLI actually working on the bench needed two
@@ -97,12 +97,13 @@ Open either in any serial terminal once connected.
 |---|---|
 | `help` | Lists every registered command and its help text (built in, registered by `shell_init()`) |
 | `status` | Prints the board name and uptime |
-| `dfu` | Only on boards with `HELM_HAS_ROM_BOOTLOADER_DFU` set (`matek_h743`, not `afroflight32`) — reboots into the ROM USB DFU bootloader, ready for `pio run -t upload` |
+| `dfu` | Only on boards with `HELM_HAS_ROM_BOOTLOADER_JUMP` set (`matek_h743`, `afroflight32`) — reboots into the chip's ROM bootloader (USB DFU on matek_h743, plain UART/AN3155 on afroflight32), ready for `pio run -t upload` with no manual BOOT0-strap needed |
 | `diag pipeline` | Shows the RX→Mapping→Control→Output→Servo chain's final stage output (status + channel values) |
 | `diag wedge` | Bench-only: spins a task above the supervisor's priority to prove IWDG actually resets the board (#5) — the board reboots ~250ms after running this |
 | `diag telemetry` | Dumps the telemetry table's current state (issue #16) — every field, value/status/age, even before any protocol adapter (#18/#19) exists |
 | `diag sport` | Only on boards with `HELM_HAS_SPORT_UART` set (`matek_h743`) — poll-marker vs. poll-match counters (issue #18), for telling "receiver isn't polling" apart from "polling, ID never matches" apart from "genuinely working" |
-| `diag imu` | Only on boards with `HELM_HAS_IMU` set (`matek_h743`, `afroflight32`) — dumps the IMU sample queue's status + values (issue #14 scaffolding); always `FAILED`/all-zero until #15 adds the real chip read |
+| `diag imu` | Only on boards with `HELM_HAS_IMU` set (`matek_h743`, `afroflight32`) — dumps the IMU sample queue's status + values, real chip reads as of #26/#27 |
+| `diag baro` | Only on boards with `HELM_HAS_BARO` set (`matek_h743`, `afroflight32`) — dumps the baro sample queue's status + pressure/temperature, real chip reads as of #23 |
 
 ## Adding a command
 

@@ -18,7 +18,7 @@
    sport.c's entire body is guarded on HELM_HAS_SPORT_UART -- boards
    without a ported board_sport_uart_* transport (board.h) compile this
    to an empty translation unit, same in-file-guard idiom lib/cli/cli.c
-   already uses for its HELM_HAS_ROM_BOOTLOADER_DFU-gated dfu command,
+   already uses for its HELM_HAS_ROM_BOOTLOADER_JUMP-gated dfu command,
    rather than needing a separate lib_ignore entry. Call sport_start()
    only when HELM_FEATURE_TELEMETRY_SPORT && HELM_HAS_SPORT_UART are both
    set -- see src/main.c. */

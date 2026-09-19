@@ -10,7 +10,7 @@
    convention and platformio.ini's custom_helm_bootloader/
    scripts/add_bootloader.py for how a board opts in. Boards without an
    implementation don't compile this at all -- gate any call to these
-   functions behind board_features.h's HELM_HAS_ROM_BOOTLOADER_DFU. */
+   functions behind board_features.h's HELM_HAS_ROM_BOOTLOADER_JUMP. */
 
 /* Call as the literal first statement in main() -- before HAL_Init() or
    board_init() touch any clock/peripheral. If a previous boot called

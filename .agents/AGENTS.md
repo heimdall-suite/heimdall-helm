@@ -36,7 +36,7 @@ lint/test commands yet). `matek_h743` is now flashed/bench-verified on
 real hardware: `pio run -e matek_h743 -t upload` goes out over its ROM
 USB DFU bootloader (dfu-util) — no ST-Link/CubeProgrammer involved, and
 none is used for any target in this project. Once firmware with
-`HELM_FEATURE_CLI`/`HELM_HAS_ROM_BOOTLOADER_DFU` is already running, its
+`HELM_FEATURE_CLI`/`HELM_HAS_ROM_BOOTLOADER_JUMP` is already running, its
 own `dfu` CLI command (`lib/bootloader/stm32h7.c`) jumps it into that
 bootloader in software, over the same USB cable, no button press needed.
 `afroflight32` does NOT flash via USB DFU, unlike matek_h743 -- that was
@@ -44,16 +44,20 @@ this doc's own earlier guess, corrected once aoa-boat-controller's real
 firmware for this exact physical board was actually checked (#12/#13):
 its "USB" port is an onboard USB-serial converter chip wired to USART1,
 not this chip's native USB peripheral at all, so flashing goes over that
-same UART against the STM32's built-in serial ROM bootloader (BOOT0-strap
-required), and its CLI (`HELM_FEATURE_CLI`, now on) runs over that same
-UART bridge too -- see `.docs/cli.md` and `lib/usb_cdc/stm32f1.c`'s own
-header comment for the full story. It won't get the `dfu` bootloader-jump
-command regardless -- `HELM_HAS_ROM_BOOTLOADER_DFU` is a separate
-capability from `HELM_FEATURE_CLI`, not implied by it (see
-`boards/afroflight32/board_features.h`), and this board's bootloader has
-to be entered manually. Both the flash-over-UART path and the CLI running
-over that same UART bridge are now bench-verified on the real unit (#13,
-which also fixed a VTOR + heap-exhaustion bug found in the process).
+same UART against the STM32's built-in serial ROM bootloader instead, and
+its CLI (`HELM_FEATURE_CLI`, now on) runs over that same UART bridge too
+-- see `.docs/cli.md` and `lib/usb_cdc/stm32f1.c`'s own header comment
+for the full story. It DOES now get the `dfu` bootloader-jump command too
+(issue #28, `lib/bootloader/stm32f1.c`) -- bench-confirmed reliable across
+repeated cycles: no more manual BOOT0-strap needed for either board.
+Different mechanism from matek_h743's (this chip's plain UART ROM
+bootloader, AN3155 protocol, reached over the same USART1/USB-serial
+bridge already used for the CLI, not USB DFU class -- backed by this
+chip's real BKP peripheral backup registers rather than H7's RTC ones,
+see that file's own header comment), same `HELM_HAS_ROM_BOOTLOADER_JUMP`
+capability shape. Both the flash-over-UART path and the CLI running over
+that same UART bridge are bench-verified on the real unit (#13, which
+also fixed a VTOR + heap-exhaustion bug found in the process).
 `nexus_xr` remains unbuildable on purpose (see above).
 
 The real module/scheduler architecture (extensibility, fault isolation/HA

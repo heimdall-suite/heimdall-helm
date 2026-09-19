@@ -26,12 +26,12 @@
 #define HELM_FEATURE_TELEMETRY_SPORT 1
 #define HELM_FEATURE_PARAMS_PERSIST 1
 
-/* HELM_HAS_ROM_BOOTLOADER_DFU: this chip's ROM DFU-jump technique (RTC
+/* HELM_HAS_ROM_BOOTLOADER_JUMP: this chip's ROM DFU-jump technique (RTC
    backup register + reset, see lib/bootloader/stm32h7.c) is implemented
    and bench-confirmed working on this exact physical board (see that
    file's own header comment) -- 1 here, 0 on boards without a ported
    implementation. */
-#define HELM_HAS_ROM_BOOTLOADER_DFU 1
+#define HELM_HAS_ROM_BOOTLOADER_JUMP 1
 
 /* HELM_FEATURE_CLI: build the USB-CDC CLI console (lib/shell + lib/cli +
    lib/usb_cdc) and register its bootloader-DFU command. Off on boards
@@ -75,7 +75,7 @@
    lib/telemetry/sport.c's entire body (see that file's own comment);
    0 on boards without a ported S.Port UART transport, same category as
    HELM_HAS_SBUS_UART above. Independent of HELM_FEATURE_TELEMETRY_SPORT
-   (board "wants" S.Port telemetry) the same way HELM_HAS_ROM_BOOTLOADER_DFU
+   (board "wants" S.Port telemetry) the same way HELM_HAS_ROM_BOOTLOADER_JUMP
    is independent of HELM_FEATURE_CLI -- see .docs/cli.md's own comment
    on why these stay two separate flags. */
 #define HELM_HAS_SPORT_UART 1
