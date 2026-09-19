@@ -46,4 +46,13 @@
 #define HELM_RX_DEFAULT_PROTOCOL_SBUS 1
 #define HELM_RX_DEFAULT_PROTOCOL_CRSF 0
 
+/* HELM_HAS_SBUS_UART: this board's real SBUS UART wiring
+   (board_sbus_uart_init()/board_sbus_uart_take_frame() in board.c/board.h)
+   is implemented and bench-confirmed -- USART6/PC7 ("RX6" silk), see
+   board.h's own comment for the full provenance (issue #8). Gates
+   lib/rx/sbus.c's real decode path; 0 on boards without a confirmed SBUS
+   UART wiring yet (falls back to sbus.c's fixed-test-data stub instead,
+   same as every driver was before #8). */
+#define HELM_HAS_SBUS_UART 1
+
 #endif /* HELM_BOARD_FEATURES_H */

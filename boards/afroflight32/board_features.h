@@ -57,4 +57,11 @@
 #define HELM_RX_DEFAULT_PROTOCOL_SBUS 1
 #define HELM_RX_DEFAULT_PROTOCOL_CRSF 0
 
+/* HELM_HAS_SBUS_UART: no confirmed SBUS UART wiring on this board yet --
+   see the #8 kickoff notes (which UART/pin isn't decided here, unlike
+   matek_h743's bench-confirmed USART6/PC7). Not blocking: lib/rx/sbus.c
+   falls back to its fixed-test-data stub when this is 0, same behavior
+   the #7 pipeline was already bench-verified against on this board. */
+#define HELM_HAS_SBUS_UART 0
+
 #endif /* HELM_BOARD_FEATURES_H */

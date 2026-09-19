@@ -29,8 +29,8 @@ multiple board targets stay in scope.
 
 | Target (`platformio.ini` env) | MCU | Status |
 |---|---|---|
-| `matek_h743` | STM32H743 (Cortex-M7, dual-precision FPU) | Builds, real clock config, not yet flashed |
-| `afroflight32` | STM32F103 (Cortex-M3, no FPU) | Builds, real clock config, deliberately reduced feature set (20KB RAM) |
+| `matek_h743` | STM32H743 (Cortex-M7, dual-precision FPU) | Flashed/bench-verified over USB DFU; real SBUS decode bench-verified (see Status) |
+| `afroflight32` | STM32F103 (Cortex-M3, no FPU) | Builds, real clock config, deliberately reduced feature set (20KB RAM); not yet flashed |
 | `nexus_xr` | STM32F722 (Cortex-M7, single-precision FPU) | Structural placeholder only — `board.c` intentionally `#error`s, no confirmed pin/clock data exists yet |
 
 See [.docs/hardware.md](.docs/hardware.md) for details, and
@@ -78,12 +78,26 @@ preemptive scheduling for real fault isolation between modules — see that
 folder's README for why it's vendored rather than a submodule or registry
 package).
 
-Current milestone: `matek_h743` and `afroflight32` both build and link
-cleanly (real clock config from each board's own bench-confirmed HSE/PLL
-values, HAL + FreeRTOS, one heartbeat task, scheduler started) — proves
-the toolchain and the multi-target structure end to end. `nexus_xr` is
-structurally present but intentionally not buildable (see table above).
-None of the three are flashed or bench-verified on real hardware yet (no
-ST-Link/CubeProgrammer tooling in the environment this was built in). No
-real modules or the module/scheduler architecture itself exist yet — this
-is a bring-up-and-structure milestone, not a feature.
+Bring-up and multi-target structure milestone: `matek_h743` and
+`afroflight32` both build and link cleanly (real clock config from each
+board's own bench-confirmed HSE/PLL values). `nexus_xr` is structurally
+present but intentionally not buildable (see table above). `matek_h743`
+is flashed and bench-verified on real hardware over USB DFU (`pio run -e
+matek_h743 -t upload`, no ST-Link/CubeProgrammer needed); `afroflight32`
+isn't flashed yet.
+
+Past bring-up, a stub Input→Mapping→Control→Output→Servo chain runs on
+`matek_h743` (each stage its own FreeRTOS task/queue, registered with a
+module-liveness supervisor), and the RX stage's SBUS driver now does real
+UART/DMA decode rather than returning fixed test data: USART6/PC7, DMA
+with idle-line detection, the STM32H7 hardware RX-invert bit instead of
+an external inverter. Bench-verified end to end with a real receiver and
+transmitter — the explicit SBUS failsafe bit (transmitter off) and the
+receive-timeout backstop (receiver unplugged) both correctly report
+`FAILSAFE` and correctly recover back to `OK` once the signal returns.
+`afroflight32`/`nexus_xr` don't have a confirmed SBUS UART wiring yet and
+still use the fixed-test-data stub.
+
+The actual module/scheduler architecture (extensibility, fault
+isolation/HA design, not just today's stub chain) is still undesigned —
+confirm architecture direction before building further modules out.

@@ -30,4 +30,9 @@
 #define HELM_RX_DEFAULT_PROTOCOL_SBUS 0
 #define HELM_RX_DEFAULT_PROTOCOL_CRSF 1
 
+/* HELM_HAS_SBUS_UART: no hardware on the bench at all, and this board
+   defaults to CRSF anyway -- see afroflight32/board_features.h's own
+   comment on what this flag gates. */
+#define HELM_HAS_SBUS_UART 0
+
 #endif /* HELM_BOARD_FEATURES_H */
