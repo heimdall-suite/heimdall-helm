@@ -16,9 +16,12 @@ both build and link cleanly with real, bench-derived clock configs;
 confirmed hardware data — see `boards/nexus_xr/board.h`). `matek_h743` is
 now flashed/bench-verified on real hardware over USB DFU (`pio run -e
 matek_h743 -t upload`, no ST-Link/CubeProgrammer involved); `afroflight32`
-is planned to flash the same USB-DFU way but hasn't been bench-verified
-yet — see `.agents/AGENTS.md` for the difference in how each board enters
-its bootloader. The actual module/scheduler
+does NOT flash via USB DFU (an earlier, now-corrected guess) — its "USB"
+port is an onboard USB-serial converter chip wired to a plain UART, not
+this chip's native USB peripheral, so it flashes over that same UART
+against the STM32's built-in serial bootloader instead, and hasn't been
+bench-verified yet — see `.agents/AGENTS.md` and `.docs/cli.md` for the
+full story. The actual module/scheduler
 architecture (extensibility, fault isolation/HA) is still undesigned — the
 current `src/main.c` is a bring-up stub (one heartbeat task per board), not
 the real firmware structure. Confirm architecture direction with the user

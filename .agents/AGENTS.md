@@ -39,12 +39,20 @@ none is used for any target in this project. Once firmware with
 `HELM_FEATURE_CLI`/`HELM_HAS_ROM_BOOTLOADER_DFU` is already running, its
 own `dfu` CLI command (`lib/bootloader/stm32h7.c`) jumps it into that
 bootloader in software, over the same USB cable, no button press needed.
-`afroflight32` is planned to flash the same USB-DFU way and will get a
-CLI eventually, but won't get the `dfu` bootloader-jump command even
-then — `HELM_HAS_ROM_BOOTLOADER_DFU` is a separate capability from
-`HELM_FEATURE_CLI`, not implied by it (see `boards/afroflight32/
-board_features.h`). Its bootloader has to be entered manually instead,
-and it hasn't been bench-verified yet. `nexus_xr` remains unbuildable on
+`afroflight32` does NOT flash via USB DFU, unlike matek_h743 -- that was
+this doc's own earlier guess, corrected once aoa-boat-controller's real
+firmware for this exact physical board was actually checked (#12/#13):
+its "USB" port is an onboard USB-serial converter chip wired to USART1,
+not this chip's native USB peripheral at all, so flashing goes over that
+same UART against the STM32's built-in serial ROM bootloader (BOOT0-strap
+required), and its CLI (`HELM_FEATURE_CLI`, now on) runs over that same
+UART bridge too -- see `.docs/cli.md` and `lib/usb_cdc/stm32f1.c`'s own
+header comment for the full story. It won't get the `dfu` bootloader-jump
+command regardless -- `HELM_HAS_ROM_BOOTLOADER_DFU` is a separate
+capability from `HELM_FEATURE_CLI`, not implied by it (see
+`boards/afroflight32/board_features.h`), and this board's bootloader has
+to be entered manually. None of this is bench-verified yet -- built and
+linking, not flashed to the real unit. `nexus_xr` remains unbuildable on
 purpose (see above).
 
 The real module/scheduler architecture (extensibility, fault isolation/HA

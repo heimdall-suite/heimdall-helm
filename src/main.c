@@ -20,8 +20,10 @@
 #error "Unknown MCU family -- add its HAL include here for this board."
 #endif
 
-#if HELM_FEATURE_CLI
+#if HELM_HAS_ROM_BOOTLOADER_DFU
 #include "bootloader.h"
+#endif
+#if HELM_FEATURE_CLI
 #include "cli.h"
 #endif
 
@@ -74,11 +76,17 @@ void SysTick_Handler(void) {
    simply never starts that module's task, rather than every module
    having its own scattered per-board #ifdefs. */
 int main(void) {
-#if HELM_FEATURE_CLI
+#if HELM_HAS_ROM_BOOTLOADER_DFU
     // Check whether the CLI's `dfu` command left a reboot-into-bootloader
     // request behind; if so, jump straight into it and never return.
     // Literal first statement -- before HAL_Init()/board_init() touch any
     // clock or peripheral, see bootloader_jump_if_requested()'s own comment.
+    // Gated on HELM_HAS_ROM_BOOTLOADER_DFU, not HELM_FEATURE_CLI -- issue
+    // #13 fixed this after finding it would otherwise fail to link on a
+    // board with a CLI but no bootloader-jump port (lib/bootloader.h's own
+    // header comment already documented this as the correct gate; this
+    // call site and cli.c's cmd_dfu registration just weren't following it
+    // yet).
     bootloader_jump_if_requested();
 #endif
 
@@ -122,8 +130,9 @@ int main(void) {
     servo_start();
 
 #if HELM_FEATURE_CLI
-    // Start the CLI console task (issue #1) -- USB CDC transport, `status`/
-    // `dfu`/`help` commands.
+    // Start the CLI console task (issue #1) -- `status`/`help`/`diag`
+    // always, `dfu` too on boards with HELM_HAS_ROM_BOOTLOADER_DFU set
+    // (see cli.c's own gating on that flag).
     cli_start();
 #endif
 

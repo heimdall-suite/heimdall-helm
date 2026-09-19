@@ -7,11 +7,14 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "board.h"
-#include "bootloader.h"
 #include "diag.h"
 #include "shell.h"
 #include "usb_cdc.h"
 #include <stdio.h>
+
+#if HELM_HAS_ROM_BOOTLOADER_DFU
+#include "bootloader.h"
+#endif
 
 #if defined(STM32H7)
 #include "stm32h7xx_hal.h"
@@ -33,15 +36,21 @@ static void cmd_status(const char *args) {
     shell_print(line);
 }
 
+#if HELM_HAS_ROM_BOOTLOADER_DFU
 /* `dfu` command handler: reboots into the ROM USB DFU bootloader from the
    same USB cable the CLI itself runs over -- the reason this feature was
    built in the first place, closing the loop with lib/bootloader so no
-   BOOT-button/ST-Link is needed to reflash. */
+   BOOT-button/ST-Link is needed to reflash. Gated on
+   HELM_HAS_ROM_BOOTLOADER_DFU, not just HELM_FEATURE_CLI (issue #13) --
+   a board can have a CLI without a ported bootloader-jump (afroflight32
+   is exactly that case: lib/bootloader is lib_ignore'd there entirely,
+   so this would fail to link if registered unconditionally). */
 static void cmd_dfu(const char *args) {
     (void)args;
     shell_print("rebooting into ROM DFU bootloader...\r\n");
     bootloader_request_dfu();
 }
+#endif
 
 /* `diag` command handler: forwards to lib/diag's own dispatch --
    `pipeline`/`wedge` and any future bench-only diagnostic live there,
@@ -71,9 +80,11 @@ static void cli_task(void *arg) {
     if (!shell_register("status", "show board name and uptime", cmd_status)) {
         shell_print("WARNING: command table full, \"status\" NOT registered\r\n");
     }
+#if HELM_HAS_ROM_BOOTLOADER_DFU
     if (!shell_register("dfu", "reboot into the ROM USB DFU bootloader", cmd_dfu)) {
         shell_print("WARNING: command table full, \"dfu\" NOT registered\r\n");
     }
+#endif
     if (!shell_register("diag", "bench-only diagnostics -- see .docs/cli.md (try: diag pipeline / diag wedge)",
                          cmd_diag)) {
         shell_print("WARNING: command table full, \"diag\" NOT registered\r\n");
