@@ -9,6 +9,12 @@
 #define HELM_HAS_BLACKBOX_STORAGE 0
 
 #define HELM_FEATURE_BLACKBOX 0
+/* HELM_FEATURE_TELEMETRY: the protocol-agnostic gather task + table
+   (issue #16), separate from HELM_FEATURE_TELEMETRY_SPORT below -- see
+   matek_h743/board_features.h's own comment. 0 here for the same reason
+   everything else on this board is: no hardware on the bench, board.c
+   still #errors. */
+#define HELM_FEATURE_TELEMETRY 0
 #define HELM_FEATURE_TELEMETRY_SPORT 0
 #define HELM_FEATURE_PARAMS_PERSIST 0
 
