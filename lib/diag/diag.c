@@ -12,6 +12,9 @@
 #if HELM_HAS_SPORT_UART
 #include "sport.h"
 #endif
+#if HELM_HAS_IMU
+#include "imu.h"
+#endif
 
 /* `pipeline`: prints the Input->Mapping->Control->Output->Servo stub
    chain's (issue #7) final stage output -- the plumbing this chain
@@ -125,6 +128,40 @@ static void diag_sport(void) {
 }
 #endif
 
+#if HELM_HAS_IMU
+static const char *sensor_status_name(SensorStatus status) {
+    switch (status) {
+        case SENSOR_STATUS_OK:
+            return "OK";
+        case SENSOR_STATUS_STALE:
+            return "STALE";
+        case SENSOR_STATUS_FAILED:
+            return "FAILED";
+        default:
+            return "?";
+    }
+}
+
+/* `imu`: dumps the IMU sample queue's current state (issue #14) -- proves
+   imu_start()'s task/queue/supervisor wiring round-trips on real
+   hardware even before #15 adds a real chip read. Values printed
+   milli-g/milli-deg-per-s scaled to an integer, same reason diag_telemetry()
+   avoids %f. Always FAILED / all-zero until #15 lands. */
+static void diag_imu(void) {
+    ImuSample sample;
+    imu_get_latest(&sample);
+
+    char line[128];
+    snprintf(line, sizeof(line),
+             "imu: status=%-6s accel_mg=[%ld %ld %ld] gyro_mdps=[%ld %ld %ld]\r\n",
+             sensor_status_name(sample.status), (long)(sample.accel_g[0] * 1000.0f),
+             (long)(sample.accel_g[1] * 1000.0f), (long)(sample.accel_g[2] * 1000.0f),
+             (long)(sample.gyro_dps[0] * 1000.0f), (long)(sample.gyro_dps[1] * 1000.0f),
+             (long)(sample.gyro_dps[2] * 1000.0f));
+    shell_print(line);
+}
+#endif
+
 void diag_dispatch(const char *args) {
     if (strcmp(args, "pipeline") == 0) {
         diag_pipeline();
@@ -136,10 +173,17 @@ void diag_dispatch(const char *args) {
     } else if (strcmp(args, "sport") == 0) {
         diag_sport();
 #endif
+#if HELM_HAS_IMU
+    } else if (strcmp(args, "imu") == 0) {
+        diag_imu();
+#endif
     } else {
         shell_print("usage: diag <subcommand> -- available: pipeline, wedge, telemetry"
 #if HELM_HAS_SPORT_UART
                     ", sport"
+#endif
+#if HELM_HAS_IMU
+                    ", imu"
 #endif
                     "\r\n");
     }

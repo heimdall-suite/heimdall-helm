@@ -102,6 +102,7 @@ Open either in any serial terminal once connected.
 | `diag wedge` | Bench-only: spins a task above the supervisor's priority to prove IWDG actually resets the board (#5) — the board reboots ~250ms after running this |
 | `diag telemetry` | Dumps the telemetry table's current state (issue #16) — every field, value/status/age, even before any protocol adapter (#18/#19) exists |
 | `diag sport` | Only on boards with `HELM_HAS_SPORT_UART` set (`matek_h743`) — poll-marker vs. poll-match counters (issue #18), for telling "receiver isn't polling" apart from "polling, ID never matches" apart from "genuinely working" |
+| `diag imu` | Only on boards with `HELM_HAS_IMU` set (`matek_h743`, `afroflight32`) — dumps the IMU sample queue's status + values (issue #14 scaffolding); always `FAILED`/all-zero until #15 adds the real chip read |
 
 ## Adding a command
 
