@@ -499,6 +499,107 @@ void board_iwdg_refresh(void) {
     HAL_IWDG_Refresh(&iwdg);
 }
 
+/* Onboard ICM42688P IMU -- SPI1, CS=PC15, SCK=PA5, MISO=PA6, MOSI=PD7.
+   See board.h's own comment on board_imu_spi_init() for the pin
+   provenance and the board-owns-the-bus/lib-owns-the-protocol split.
+   Blocking HAL_SPI_Transmit/Receive, not DMA/interrupt-driven -- this
+   bus is only ever touched a handful of times per 20ms IMU task tick
+   (lib/sensors/imu.c), nowhere near tight enough to need anything
+   fancier, same reasoning board_sbus_uart_init() gives for why *that*
+   peripheral needed DMA and this one doesn't. */
+
+static SPI_HandleTypeDef imuSpi;
+
+static void imu_spi_cs_low(void) {
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+}
+
+static void imu_spi_cs_high(void) {
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+}
+
+void board_imu_spi_init(void) {
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_SPI1_CLK_ENABLE();
+
+    /* SCK (PA5) + MISO (PA6) -- AF5, confirmed against real CubeMX-
+       generated STM32H7 reference projects using this same PD7/PA5/PA6
+       SPI1 pin trio (H750, same AF table as this board's H743). */
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_5 | GPIO_PIN_6;
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Pull = GPIO_NOPULL;
+    gpioInit.Speed = GPIO_SPEED_FREQ_HIGH;
+    gpioInit.Alternate = GPIO_AF5_SPI1;
+    HAL_GPIO_Init(GPIOA, &gpioInit);
+
+    /* MOSI (PD7) -- same AF5/SPI1, different port. */
+    gpioInit.Pin = GPIO_PIN_7;
+    HAL_GPIO_Init(GPIOD, &gpioInit);
+
+    /* CS (PC15) -- plain GPIO output, software-controlled: this chip's
+       CS needs to frame each register transaction explicitly (held low
+       for the address+data bytes, see board_imu_spi_write_reg()/
+       board_imu_spi_read_regs() below), not SPI1's own hardware NSS. */
+    gpioInit.Pin = GPIO_PIN_15;
+    gpioInit.Mode = GPIO_MODE_OUTPUT_PP;
+    gpioInit.Pull = GPIO_NOPULL;
+    gpioInit.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOC, &gpioInit);
+    imu_spi_cs_high(); /* idle high */
+
+    /* SPI1's kernel clock defaults to PLL1Q (RCC_SPI123CLKSOURCE_PLL,
+       the reset value of RCC_D2CCIP1R_SPI123SEL -- confirmed against
+       this project's own copy of stm32h7xx_hal_rcc_ex.h; nothing in
+       system_clock_config() overrides it, so this is the actual clock
+       feeding SPI1 today). PLL1Q = VCO/PLLQ = 480MHz/2 = 240MHz on
+       Rev.V silicon (60/1 N/M) or 400MHz/2 = 200MHz on older silicon
+       (50/1 N/M) -- see system_clock_config()'s own PLL comment.
+       BaudRatePrescaler /256 lands at ~940kHz/~781kHz respectively --
+       this project's own arithmetic (not sourced from a working
+       reference the way the register map below is), picked to land
+       comfortably under the ICM42688P's real 24MHz SPI max for a first
+       bring-up, same "conservative first bring-up clock" reasoning
+       aoa-boat-controller's own ImuReader used for its (Arduino-
+       library-derived) 1MHz choice. Bench-confirm the resulting SCK
+       frequency with a scope/logic analyzer once flashed; raise once
+       working. */
+    imuSpi.Instance = SPI1;
+    imuSpi.Init.Mode = SPI_MODE_MASTER;
+    imuSpi.Init.Direction = SPI_DIRECTION_2LINES;
+    imuSpi.Init.DataSize = SPI_DATASIZE_8BIT;
+    imuSpi.Init.CLKPolarity = SPI_POLARITY_LOW;  /* Mode 0 -- ICM42688P requirement */
+    imuSpi.Init.CLKPhase = SPI_PHASE_1EDGE;      /* Mode 0 */
+    imuSpi.Init.NSS = SPI_NSS_SOFT;
+    imuSpi.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+    imuSpi.Init.FirstBit = SPI_FIRSTBIT_MSB;
+    imuSpi.Init.TIMode = SPI_TIMODE_DISABLE;
+    imuSpi.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+    imuSpi.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+    if (HAL_SPI_Init(&imuSpi) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+void board_imu_spi_write_reg(uint8_t reg, uint8_t value) {
+    uint8_t const txBuf[2] = {(uint8_t)(reg & 0x7F), value}; /* MSB clear = write */
+
+    imu_spi_cs_low();
+    HAL_SPI_Transmit(&imuSpi, (uint8_t *)txBuf, sizeof(txBuf), HAL_MAX_DELAY);
+    imu_spi_cs_high();
+}
+
+void board_imu_spi_read_regs(uint8_t startReg, uint8_t *buf, uint8_t len) {
+    uint8_t const addr = (uint8_t)(startReg | 0x80); /* MSB set = read */
+
+    imu_spi_cs_low();
+    HAL_SPI_Transmit(&imuSpi, (uint8_t *)&addr, 1, HAL_MAX_DELAY);
+    HAL_SPI_Receive(&imuSpi, buf, len, HAL_MAX_DELAY);
+    imu_spi_cs_high();
+}
+
 void board_init(void) {
     system_clock_config();
     led_init();

@@ -158,4 +158,30 @@ void board_iwdg_init(void);
    scheduling, not on demand. */
 void board_iwdg_refresh(void);
 
+/* Onboard ICM42688P IMU -- SPI1, CS=PC15 (software-controlled GPIO, not
+   SPI1's own hardware NSS), SCK=PA5, MISO=PA6, MOSI=PD7 -- confirmed
+   against this project's sibling aoa-boat-controller's
+   include/pins_h743.h (itself cross-checked against ArduPilot's
+   MatekH743/hwdef.dat and Betaflight's MTKS/MATEKH743 config, plus this
+   exact physical unit's own live Betaflight `status`/`resource` output,
+   see that file's own top-of-file note) -- issue #26.
+
+   Raw byte-level SPI transaction primitives only, no register map/config
+   sequence here -- lib/sensors/icm42688p.c owns that, same board-owns-
+   the-bus/lib-owns-the-protocol split board_sport_uart_*() already
+   established for UART7 (see that comment above). Keeping the chip
+   driver pin-agnostic this way means the same icm42688p.c can be reused
+   unchanged on any other board wiring an ICM42688P differently -- e.g.
+   nexus_xr, which .docs/hardware.md already lists as carrying the same
+   chip family, once that board is unblocked. */
+void board_imu_spi_init(void);
+
+/* Writes one register (7-bit address; the chip's own read/write bit is
+   applied by icm42688p.c, not here). */
+void board_imu_spi_write_reg(uint8_t reg, uint8_t value);
+
+/* Reads `len` bytes starting at register `startReg` into `buf`, in one
+   burst SPI transaction. */
+void board_imu_spi_read_regs(uint8_t startReg, uint8_t *buf, uint8_t len);
+
 #endif /* HELM_BOARD_MATEK_H743_H */

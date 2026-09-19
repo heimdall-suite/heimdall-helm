@@ -1,15 +1,17 @@
 #include "imu.h"
+#include "imu_chip.h"
 
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "task.h"
 #include "supervisor.h"
 
-/* Placeholder task period/priority -- pure plumbing stub (issue #14),
-   same reasoning as every other stage's stub period (see rx.c's own
-   comment): no real chip decode yet to time against (issue #15 picks
-   real numbers once the IMU's actual output data rate is known), and
-   module-architecture.md's priority tiers aren't decided. */
+/* 20ms period: comfortably slower than any of this project's real onboard
+   IMU's own output data rate (icm42688p.c/mpu6500.c both configure
+   ~1kHz ODR), matching the reasoning every other stage's stub period
+   uses (see rx.c's own comment) -- module-architecture.md's priority
+   tiers still aren't decided, so this is a placeholder value, not one
+   picked against a designed control-loop rate yet. */
 #define IMU_TASK_PERIOD_MS 20
 #define IMU_TASK_PRIORITY 1
 
@@ -27,13 +29,24 @@ static void imu_task(void *arg) {
     SupervisorHandle handle = supervisor_register("imu", imu_queue, &fallback, sizeof(fallback),
                                                    pdMS_TO_TICKS(IMU_TASK_PERIOD_MS * 3));
 
+    /* One-time bring-up against whichever chip file this board's env
+       selected (see imu_chip.h) -- a failed init is permanent for this
+       boot, same as the previous plumbing-only stub always reporting
+       FAILED, just now conditioned on a real identity check instead of
+       unconditionally. */
+    bool const chipReady = imu_chip_init();
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(IMU_TASK_PERIOD_MS));
 
-        /* No real chip decode yet -- see imu.h's header comment. Always
-           FAILED, never a stale zeroed sample dressed up as OK. */
         ImuSample sample = {0};
-        sample.status = SENSOR_STATUS_FAILED;
+        if (chipReady && imu_chip_read(sample.accel_g, sample.gyro_dps)) {
+            sample.status = SENSOR_STATUS_OK;
+        } else {
+            /* Either init never succeeded, or this tick's read failed --
+               never publish a stale/zeroed sample dressed up as OK. */
+            sample.status = SENSOR_STATUS_FAILED;
+        }
 
         xQueueOverwrite(imu_queue, &sample);
         supervisor_kick(handle);

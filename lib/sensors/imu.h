@@ -13,15 +13,19 @@
    flag directly, same idiom sport.c's whole-file #if HELM_HAS_SPORT_UART
    guard already uses.
 
-   No real chip decode yet -- this issue is plumbing only (module
-   lifecycle, supervisor registration, the queue), same "table before
-   source" split telemetry.c's #16 -> #17 already used. Issue #15 fills
-   this in with the real ICM42688P (matek_h743) / MPU6500 (afroflight32)
-   reads; until then imu_get_latest() always reports SENSOR_STATUS_FAILED
-   so nothing downstream can mistake this stub for a live reading. */
+   #14 built this module's plumbing only (task lifecycle, supervisor
+   registration, the queue), same "table before source" split
+   telemetry.c's #16 -> #17 used. Real chip decode is a per-board driver
+   file behind imu_chip.h's internal contract, explicit-selected at
+   build time (issue #26: icm42688p.c/matek_h743, issue #27: mpu6500.c/
+   afroflight32 -- see lib/README.md's "more than one chip in a
+   subsystem" section) -- imu.c itself stays chip-agnostic. A board
+   whose chip init failed, or one still on the pre-#26/#27 stub.c
+   placeholder, always reports SENSOR_STATUS_FAILED here, never a
+   stale/zeroed sample dressed up as OK. */
 typedef struct {
-    float accel_g[3];  /* X/Y/Z, g -- unpopulated until #15 */
-    float gyro_dps[3]; /* X/Y/Z, deg/s -- unpopulated until #15 */
+    float accel_g[3];  /* X/Y/Z, g -- only meaningful when status is OK */
+    float gyro_dps[3]; /* X/Y/Z, deg/s -- only meaningful when status is OK */
     SensorStatus status;
 } ImuSample;
 
