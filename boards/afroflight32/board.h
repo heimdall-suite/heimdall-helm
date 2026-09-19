@@ -1,6 +1,9 @@
 #ifndef HELM_BOARD_AFROFLIGHT32_H
 #define HELM_BOARD_AFROFLIGHT32_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #define HELM_BOARD_NAME "afroflight32"
 
 /* Called once from main.c, after HAL_Init(), before the scheduler starts.
@@ -38,5 +41,24 @@ void board_iwdg_init(void);
    this only happening when the supervisor's own loop is still actually
    scheduling, not on demand. */
 void board_iwdg_refresh(void);
+
+/* Onboard I2C2 -- SCL=PB10, SDA=PB11. Confirmed against cleanflight's
+   real target.h (I2C_DEVICE = I2CDEV_2) for this exact board family,
+   cross-checked against this project's sibling aoa-boat-controller's
+   include/pins_naze32.h (issue #27). This bus carries both the onboard
+   MPU6500 IMU (address 0x68) and, per board_features.h's HELM_HAS_BARO
+   comment, a BMP280 baro at a different address (0x76) -- these
+   primitives are bus-level, not IMU-specific, so a future baro driver
+   can share the same bus/init without its own copy.
+   board_i2c2_init() is safe to call more than once (idempotent):
+   whichever driver starts first brings the peripheral up, the other
+   just no-ops. */
+void board_i2c2_init(void);
+
+/* Returns true on ack, false on a bus/communication failure (NACK,
+   timeout, arbitration loss -- see board.c for exactly which HAL
+   errors map to false). */
+bool board_i2c2_write_reg(uint8_t devAddr, uint8_t reg, uint8_t value);
+bool board_i2c2_read_regs(uint8_t devAddr, uint8_t reg, uint8_t *buf, uint8_t len);
 
 #endif /* HELM_BOARD_AFROFLIGHT32_H */

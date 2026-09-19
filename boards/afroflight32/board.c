@@ -109,6 +109,66 @@ void board_iwdg_refresh(void) {
     HAL_IWDG_Refresh(&iwdg);
 }
 
+/* Onboard I2C2 -- SCL=PB10, SDA=PB11, shared by the onboard MPU6500 IMU
+   and (future) BMP280 baro. See board.h's own comment for pin/bus
+   provenance and the idempotent-init reasoning. 400kHz Fast Mode --
+   standard, datasheet-supported rate for both chips this bus carries,
+   not something needing the same from-real-source derivation as, say,
+   an SPI clock divider (every MPU6500/BMP280 datasheet lists 400kHz
+   Fast Mode support directly). No AFIO remap needed -- I2C2, unlike
+   I2C1, has no alternate pin mapping on this chip; PB10/PB11 are its
+   only location. */
+
+static I2C_HandleTypeDef imuI2c;
+static bool imuI2cInitialized = false;
+
+void board_i2c2_init(void) {
+    if (imuI2cInitialized) {
+        return;
+    }
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_I2C2_CLK_ENABLE();
+
+    /* Open-drain AF -- I2C is a wired-AND bus, external pull-ups do the
+       high side (standard I2C GPIO config, not this project's own
+       derivation). */
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_10 | GPIO_PIN_11;
+    gpioInit.Mode = GPIO_MODE_AF_OD;
+    gpioInit.Pull = GPIO_NOPULL;
+    gpioInit.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &gpioInit);
+
+    imuI2c.Instance = I2C2;
+    imuI2c.Init.ClockSpeed = 400000;
+    imuI2c.Init.DutyCycle = I2C_DUTYCYCLE_2;
+    imuI2c.Init.OwnAddress1 = 0;
+    imuI2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    imuI2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    imuI2c.Init.OwnAddress2 = 0;
+    imuI2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    imuI2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+    if (HAL_I2C_Init(&imuI2c) != HAL_OK) {
+        Error_Handler();
+    }
+
+    imuI2cInitialized = true;
+}
+
+bool board_i2c2_write_reg(uint8_t devAddr, uint8_t reg, uint8_t value) {
+    uint8_t const txBuf[2] = {reg, value};
+    return HAL_I2C_Master_Transmit(&imuI2c, (uint16_t)(devAddr << 1), (uint8_t *)txBuf, sizeof(txBuf),
+                                    HAL_MAX_DELAY) == HAL_OK;
+}
+
+bool board_i2c2_read_regs(uint8_t devAddr, uint8_t reg, uint8_t *buf, uint8_t len) {
+    if (HAL_I2C_Master_Transmit(&imuI2c, (uint16_t)(devAddr << 1), &reg, 1, HAL_MAX_DELAY) != HAL_OK) {
+        return false;
+    }
+    return HAL_I2C_Master_Receive(&imuI2c, (uint16_t)(devAddr << 1), buf, len, HAL_MAX_DELAY) == HAL_OK;
+}
+
 void board_init(void) {
     system_clock_config();
     led_init();
