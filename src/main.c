@@ -30,6 +30,9 @@
 #if HELM_FEATURE_TELEMETRY_SPORT && HELM_HAS_SPORT_UART
 #include "sport.h"
 #endif
+#if HELM_HAS_IMU
+#include "imu.h"
+#endif
 
 extern void xPortSysTickHandler(void);
 
@@ -155,6 +158,16 @@ int main(void) {
     control_start();
     output_start();
     servo_start();
+
+#if HELM_HAS_IMU
+    // Start the IMU sensor module (issue #14) -- scaffolding only, no
+    // real chip decode yet (issue #15 adds that); imu_get_latest()
+    // currently always reports SENSOR_STATUS_FAILED. Gated on
+    // HELM_HAS_IMU directly, not a HELM_FEATURE_* flag -- onboard sensor
+    // presence is a hardware fact, not a deliberate software toggle, per
+    // .docs/architecture/sensors.md's "Onboard vs. peripheral" section.
+    imu_start();
+#endif
 
 #if HELM_FEATURE_CLI
     // Start the CLI console task (issue #1) -- `status`/`help`/`diag`
