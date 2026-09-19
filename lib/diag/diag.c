@@ -7,6 +7,7 @@
 #include "rx.h"
 #include "servo.h"
 #include "shell.h"
+#include "telemetry.h"
 
 /* `pipeline`: prints the Input->Mapping->Control->Output->Servo stub
    chain's (issue #7) final stage output -- the plumbing this chain
@@ -58,12 +59,60 @@ static void diag_wedge(void) {
     xTaskCreate(wedge_task, "wedge", configMINIMAL_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
 }
 
+static const char *telemetry_field_name(TelemetryField field) {
+    switch (field) {
+        case TELEM_FIELD_TEST:
+            return "test";
+        default:
+            return "?";
+    }
+}
+
+static const char *telemetry_status_name(TelemetryStatus status) {
+    switch (status) {
+        case TELEM_STATUS_OK:
+            return "OK";
+        case TELEM_STATUS_STALE:
+            return "STALE";
+        case TELEM_STATUS_FAILED:
+            return "FAILED";
+        default:
+            return "?";
+    }
+}
+
+/* `telemetry`: dumps the telemetry table's current state (issue #16) --
+   every field this build knows about, whether or not anything has ever
+   written to it. Useful for #17's synthetic-value proof and beyond:
+   confirms telemetry_set()/telemetry_get() round-trip on real hardware
+   without needing a protocol adapter (#18/#19) wired up yet. Value
+   printed truncated to an integer, not %f -- this toolchain's
+   snprintf() float support isn't confirmed (see .agents/AGENTS.md's
+   no-fabrication standard; nothing else in this codebase prints a float
+   yet either), and every field is still a placeholder anyway. */
+static void diag_telemetry(void) {
+    for (int i = 0; i < TELEM_FIELD_COUNT; i++) {
+        TelemetryEntry entry;
+        telemetry_get((TelemetryField)i, &entry);
+
+        uint32_t now_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+        char line[96];
+        snprintf(line, sizeof(line), "telemetry: %-8s value=%ld status=%-6s age_ms=%lu\r\n",
+                 telemetry_field_name((TelemetryField)i), (long)entry.value,
+                 telemetry_status_name(entry.status),
+                 (unsigned long)(now_ms - entry.last_updated_ms));
+        shell_print(line);
+    }
+}
+
 void diag_dispatch(const char *args) {
     if (strcmp(args, "pipeline") == 0) {
         diag_pipeline();
     } else if (strcmp(args, "wedge") == 0) {
         diag_wedge();
+    } else if (strcmp(args, "telemetry") == 0) {
+        diag_telemetry();
     } else {
-        shell_print("usage: diag <subcommand> -- available: pipeline, wedge\r\n");
+        shell_print("usage: diag <subcommand> -- available: pipeline, wedge, telemetry\r\n");
     }
 }

@@ -18,6 +18,11 @@
    (most RAM/flash headroom of the three), so nothing is deliberately cut
    here the way afroflight32.h cuts things for resource reasons. */
 #define HELM_FEATURE_BLACKBOX 1
+/* HELM_FEATURE_TELEMETRY: the protocol-agnostic gather task + table
+   (issue #16) -- separate from which protocol adapter(s) actually put
+   it on a wire (HELM_FEATURE_TELEMETRY_SPORT below, issue #18; a future
+   _CRSF, issue #19). See .docs/architecture/telemetry.md. */
+#define HELM_FEATURE_TELEMETRY 1
 #define HELM_FEATURE_TELEMETRY_SPORT 1
 #define HELM_FEATURE_PARAMS_PERSIST 1
 

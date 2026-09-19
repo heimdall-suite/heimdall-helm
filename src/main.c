@@ -9,6 +9,7 @@
 #include "rx.h"
 #include "servo.h"
 #include "supervisor.h"
+#include "telemetry.h"
 
 #if defined(STM32H7)
 #include "stm32h7xx_hal.h"
@@ -157,6 +158,14 @@ int main(void) {
     // always, `dfu` too on boards with HELM_HAS_ROM_BOOTLOADER_DFU set
     // (see cli.c's own gating on that flag).
     cli_start();
+#endif
+
+#if HELM_FEATURE_TELEMETRY
+    // Start the telemetry gather task (issue #16) -- table + API only so
+    // far, nothing real to gather yet (issue #17 adds the first source,
+    // #18/#19 add the S.Port/CRSF protocol adapters that actually put it
+    // on a wire). See .docs/architecture/telemetry.md.
+    telemetry_start();
 #endif
 
     // Start the heartbeat task to physically show the board is live. Useful

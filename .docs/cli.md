@@ -100,6 +100,7 @@ Open either in any serial terminal once connected.
 | `dfu` | Only on boards with `HELM_HAS_ROM_BOOTLOADER_DFU` set (`matek_h743`, not `afroflight32`) — reboots into the ROM USB DFU bootloader, ready for `pio run -t upload` |
 | `diag pipeline` | Shows the RX→Mapping→Control→Output→Servo chain's final stage output (status + channel values) |
 | `diag wedge` | Bench-only: spins a task above the supervisor's priority to prove IWDG actually resets the board (#5) — the board reboots ~250ms after running this |
+| `diag telemetry` | Dumps the telemetry table's current state (issue #16) — every field, value/status/age, even before any protocol adapter (#18/#19) exists |
 
 ## Adding a command
 

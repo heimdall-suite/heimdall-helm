@@ -25,6 +25,14 @@
    target specifically. */
 #define HELM_FEATURE_BLACKBOX 1        /* storage exists (SPI NOR); cost is the logging
                                            task's RAM/CPU budget, not storage capacity */
+/* HELM_FEATURE_TELEMETRY: the protocol-agnostic gather task + table
+   (issue #16), separate from HELM_FEATURE_TELEMETRY_SPORT below (issue
+   #18, which protocol adapter(s) actually put it on a wire) -- see
+   .docs/architecture/telemetry.md. One QueueHandle_t per table field, a
+   few bytes each; not expected to be the thing that blows this board's
+   RAM budget, but worth re-measuring once the table has more than
+   issue #17's one placeholder field. */
+#define HELM_FEATURE_TELEMETRY 1
 #define HELM_FEATURE_TELEMETRY_SPORT 1 /* core to this project's purpose, keep on every target */
 #define HELM_FEATURE_PARAMS_PERSIST 0  /* cut for now -- TODO: revisit once a persistence
                                            backend is designed and its footprint is known */
