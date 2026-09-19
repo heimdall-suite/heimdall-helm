@@ -282,6 +282,35 @@ bool board_sbus_uart_take_frame(uint8_t out[SBUS_UART_FRAME_LEN]) {
     return true;
 }
 
+/* IWDG1 -- issue #5. STM32H7's IWDG is clocked from LSI regardless of
+   the main clock tree (RM0433, IWDG chapter), and HAL_IWDG_Init's
+   __HAL_IWDG_START forces LSI on itself -- no RCC LSI setup needed here
+   the way system_clock_config() sets up HSE/PLL.
+
+   Prescaler /32 against LSI_VALUE's nominal 32kHz (stm32h7xx_hal_conf.h)
+   gives a 1ms tick; Reload 249 (250 ticks) is a ~250ms nominal timeout --
+   roughly 25x SUPERVISOR_POLL_PERIOD_MS's 10ms sweep, so ordinary
+   scheduling jitter across other tasks can't false-trip it, while a
+   genuinely wedged supervisor still forces a reset well under a second.
+   Not bench-verified against real LSI drift yet (RM0433 gives it a wide
+   tolerance across temperature) -- revisit if bench testing shows the
+   margin is wrong in either direction. */
+static IWDG_HandleTypeDef iwdg;
+
+void board_iwdg_init(void) {
+    iwdg.Instance = IWDG1;
+    iwdg.Init.Prescaler = IWDG_PRESCALER_32;
+    iwdg.Init.Reload = 249;
+    iwdg.Init.Window = IWDG_WINDOW_DISABLE;
+    if (HAL_IWDG_Init(&iwdg) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+void board_iwdg_refresh(void) {
+    HAL_IWDG_Refresh(&iwdg);
+}
+
 void board_init(void) {
     system_clock_config();
     led_init();

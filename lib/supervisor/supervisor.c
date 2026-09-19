@@ -3,6 +3,17 @@
 #include <stdbool.h>
 #include <string.h>
 #include "task.h"
+#include "board_features.h"
+
+/* board_iwdg_init()/board_iwdg_refresh() (board.h) are register-level per
+   chip family and only exist on boards with HELM_HAS_IWDG set -- see
+   that flag's own comment in each board_features.h. Only include board.h
+   under the same guard so this file still compiles cleanly (no dangling
+   reference to an unimplemented board_iwdg_*) on a board without a
+   ported IWDG driver. */
+#if HELM_HAS_IWDG
+#include "board.h"
+#endif
 
 /* Poll period for the supervisor's own liveness sweep. Deliberately
    short relative to the kind of max_period_ticks a time-critical-I/O
@@ -77,6 +88,15 @@ void supervisor_kick(SupervisorHandle handle) {
 
 static void supervisor_task(void *arg) {
     (void)arg;
+
+#if HELM_HAS_IWDG
+    /* Started here, not from board_init()/main() -- issue #5. IWDG can't
+       be stopped once running (hardware one-way door), so it must not
+       start counting down until the one task committed to feeding it
+       every pass is the thing starting it. */
+    board_iwdg_init();
+#endif
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(SUPERVISOR_POLL_PERIOD_MS));
 
@@ -92,6 +112,18 @@ static void supervisor_task(void *arg) {
                 xQueueOverwrite(entries[i].output_queue, entries[i].fallback_value);
             }
         }
+
+#if HELM_HAS_IWDG
+        /* Feed only after a completed sweep -- this is what "fed from
+           the supervisor's own healthy pass" (module-architecture.md's
+           "Crash safety" section) actually means: proof this task is
+           still scheduling and completing real work, not just proof
+           some ISR or timer fired. If this task wedges (or the crash
+           hooks in main.c halt with interrupts disabled, which also
+           stops the tick that lets this task run at all), the feed
+           simply stops and IWDG resets the MCU on its own. */
+        board_iwdg_refresh();
+#endif
     }
 }
 

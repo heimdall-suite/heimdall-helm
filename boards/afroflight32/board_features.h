@@ -49,6 +49,11 @@
    LED pin bench-confirmed here, same standard as the flags above. */
 #define HELM_HAS_DEBUG_LED 0
 
+/* No IWDG driver ported for STM32F1 yet -- issue #5 starts with
+   matek_h743 (real bench-derived config) and ports this separately,
+   same standard as every other register-level decision here. */
+#define HELM_HAS_IWDG 0
+
 /* HELM_RX_DEFAULT_PROTOCOL_*: compile-time fallback for which lib/rx/
    driver rx_start() binds, used until HELM_FEATURE_PARAMS_PERSIST's
    persisted input-mode param exists (#10) -- see .docs/architecture/

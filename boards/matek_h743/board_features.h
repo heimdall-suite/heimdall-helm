@@ -38,6 +38,14 @@
    comment. Gates lib/debug/heartbeat.c's LED toggle. */
 #define HELM_HAS_DEBUG_LED 1
 
+/* HELM_HAS_IWDG: board_iwdg_init()/board_iwdg_refresh() (board.h) are
+   implemented for this chip family (STM32H7 IWDG1, LSI-clocked) --
+   issue #5. Gates lib/supervisor/supervisor.c's watchdog start/feed;
+   0 on boards without a ported IWDG driver yet (afroflight32/nexus_xr --
+   register-level per chip family, same standard as every other
+   clock/peripheral decision here, ported separately per the issue). */
+#define HELM_HAS_IWDG 1
+
 /* HELM_RX_DEFAULT_PROTOCOL_*: compile-time fallback for which lib/rx/
    driver rx_start() binds, used until HELM_FEATURE_PARAMS_PERSIST's
    persisted input-mode param exists (#10) -- see .docs/architecture/

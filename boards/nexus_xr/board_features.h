@@ -21,6 +21,11 @@
    hardware on the bench at all, don't guess (see board.h). */
 #define HELM_HAS_DEBUG_LED 0
 
+/* No IWDG driver ported for STM32F7 yet -- see afroflight32/
+   board_features.h's own comment; this board is blocked on its
+   hardware #error anyway. */
+#define HELM_HAS_IWDG 0
+
 /* HELM_RX_DEFAULT_PROTOCOL_*: compile-time fallback for which lib/rx/
    driver rx_start() binds, used until HELM_FEATURE_PARAMS_PERSIST's
    persisted input-mode param exists (#10) -- see .docs/architecture/

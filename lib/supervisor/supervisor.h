@@ -74,7 +74,15 @@ void supervisor_kick(SupervisorHandle handle);
    and before any module that will register with it -- unconditional,
    not gated behind a HELM_FEATURE_* flag, same as
    debug_heartbeat_start(): every board gets the safety net regardless of
-   feature budget. */
+   feature budget.
+
+   On boards with HELM_HAS_IWDG set (issue #5,
+   .docs/architecture/module-architecture.md's "Crash safety" section),
+   this task also starts and feeds the independent hardware watchdog
+   from its own healthy pass -- see supervisor.c. Boards without a
+   ported IWDG driver still get the liveness/fallback-substitution
+   mechanism above; they just don't get the reset-on-wedge backstop
+   yet. */
 void supervisor_start(void);
 
 #endif /* HELM_SUPERVISOR_H */

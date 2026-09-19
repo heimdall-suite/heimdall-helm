@@ -91,7 +91,15 @@ int main(void) {
     // that will register with it (.docs/architecture/module-architecture.md's
     // "Fault isolation" section) -- unconditional, not gated behind a
     // HELM_FEATURE_* flag, same as the heartbeat below: every board gets
-    // the safety net regardless of feature budget.
+    // the safety net regardless of feature budget. On boards with
+    // HELM_HAS_IWDG set (issue #5), the supervisor task also owns starting
+    // and feeding the independent hardware watchdog from its own healthy
+    // pass -- see supervisor.c. A wedged supervisor, or the crash hooks
+    // below halting with interrupts disabled, both stop that feed and let
+    // IWDG reset the MCU; board_init() is responsible for a safe power-on
+    // state.
+    supervisor_start();
+
     // Start the Input->Mapping->Control->Output->Servo stub chain (issue
     // #7), each stage its own task/queue/supervisor-registered module
     // per .docs/architecture/module-architecture.md, wired in this

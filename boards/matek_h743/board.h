@@ -68,4 +68,20 @@ void board_sbus_uart_init(void);
    state machine of its own. */
 bool board_sbus_uart_take_frame(uint8_t out[SBUS_UART_FRAME_LEN]);
 
+/* IWDG1 (STM32H7's independent, LSI-clocked watchdog) -- issue #5,
+   .docs/architecture/module-architecture.md's "Crash safety" section.
+   Called exactly once, from lib/supervisor/supervisor.c's task on its
+   own first pass (gated on HELM_HAS_IWDG): starting it is a one-way
+   door in hardware (no software disable exists once running), so it
+   must not start before something is actually committed to feeding it.
+   See board.c for the prescaler/reload derivation. */
+void board_iwdg_init(void);
+
+/* Feeds (reloads) the running IWDG counter -- called once per pass from
+   the same supervisor task, after board_iwdg_init(). Must never be
+   called from anywhere else: the entire safety property depends on
+   this only happening when the supervisor's own loop is still actually
+   scheduling, not on demand. */
+void board_iwdg_refresh(void);
+
 #endif /* HELM_BOARD_MATEK_H743_H */

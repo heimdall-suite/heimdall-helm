@@ -10,7 +10,7 @@ tooling on the host.
 
 ## How it's wired
 
-Four pieces, split the way [lib/README.md](../lib/README.md) describes
+Five pieces, split the way [lib/README.md](../lib/README.md) describes
 (chip-not-board for hardware, hardware-independent logic gets its own
 folder too):
 
@@ -20,6 +20,7 @@ folder too):
 | Shell engine | `lib/shell/` | Nothing hardware — line editing, command dispatch, given bytes in/out as function pointers |
 | This project's CLI | `lib/cli/` | Wires `shell` to `usb_cdc`, registers this project's own commands |
 | DFU reboot | `lib/bootloader/` | Software jump into the chip's ROM DFU bootloader, one implementation per chip |
+| Bench diagnostics | `lib/diag/` | Bring-up/bench-only subcommands (`pipeline`, `wedge`), all dispatched through the CLI's single `diag` command |
 
 `src/main.c` starts it with a single `cli_start()` call, gated on
 `board_features.h`'s `HELM_FEATURE_CLI`.
@@ -54,11 +55,14 @@ terminal; baud rate doesn't matter for a USB CDC device.
 | `help` | Lists every registered command and its help text (built in, registered by `shell_init()`) |
 | `status` | Prints the board name and uptime |
 | `dfu` | Reboots into the ROM USB DFU bootloader, ready for `pio run -t upload` |
+| `diag pipeline` | Shows the RX→Mapping→Control→Output→Servo chain's final stage output (status + channel values) |
+| `diag wedge` | Bench-only: spins a task above the supervisor's priority to prove IWDG actually resets the board (#5) — the board reboots ~250ms after running this |
 
 ## Adding a command
 
-Commands live in `lib/cli/cli.c`, following `cmd_status`/`cmd_dfu`'s
-shape:
+**A real operational command** (something a normal flight-line workflow
+needs, like `status`/`dfu`) lives in `lib/cli/cli.c`, following
+`cmd_status`/`cmd_dfu`'s shape:
 
 ```c
 static void cmd_mycommand(const char *args) {
@@ -80,3 +84,12 @@ there if a project ever needs more. Always check `shell_register()`'s
 return value; a silently dropped command is exactly the bug this
 bounds-checked shape was chosen to avoid (see that function's own header
 comment).
+
+**A bring-up/bench-only diagnostic** (inspection like `pipeline`, or
+hazardous like `wedge`) does NOT get its own top-level `shell_register()`
+call. Add a subcommand to `lib/diag/diag.c`'s `diag_dispatch()` instead —
+a `static void diag_mything(void)` plus one more `strcmp` branch — and
+list it in this file's command table above. This keeps the 16-slot table
+for commands a real workflow needs, and keeps every hazardous/inspection-
+only action grep-able in one file rather than scattered across the
+top-level namespace.
