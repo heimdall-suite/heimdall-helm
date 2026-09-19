@@ -12,9 +12,7 @@
 #if HELM_HAS_SPORT_UART
 #include "sport.h"
 #endif
-#if HELM_HAS_IMU
 #include "imu.h"
-#endif
 
 /* `pipeline`: prints the Input->Mapping->Control->Output->Servo stub
    chain's (issue #7) final stage output -- the plumbing this chain
@@ -88,6 +86,24 @@ static const char *telemetry_status_name(TelemetryStatus status) {
     }
 }
 
+/* Generic to sensors.h's shared SensorStatus, not IMU-specific -- unlike
+   diag_imu() below, this has no dependency on HELM_HAS_IMU (SensorStatus
+   is defined unconditionally) and stays ungated so any future sensor's
+   diag command (baro/#23, mag, gps, ...) can reuse it instead of
+   duplicating it. */
+static const char *sensor_status_name(SensorStatus status) {
+    switch (status) {
+        case SENSOR_STATUS_OK:
+            return "OK";
+        case SENSOR_STATUS_STALE:
+            return "STALE";
+        case SENSOR_STATUS_FAILED:
+            return "FAILED";
+        default:
+            return "?";
+    }
+}
+
 /* `telemetry`: dumps the telemetry table's current state (issue #16) --
    every field this build knows about, whether or not anything has ever
    written to it. Useful for #17's synthetic-value proof and beyond:
@@ -129,24 +145,18 @@ static void diag_sport(void) {
 #endif
 
 #if HELM_HAS_IMU
-static const char *sensor_status_name(SensorStatus status) {
-    switch (status) {
-        case SENSOR_STATUS_OK:
-            return "OK";
-        case SENSOR_STATUS_STALE:
-            return "STALE";
-        case SENSOR_STATUS_FAILED:
-            return "FAILED";
-        default:
-            return "?";
-    }
-}
-
 /* `imu`: dumps the IMU sample queue's current state (issue #14) -- proves
    imu_start()'s task/queue/supervisor wiring round-trips on real
-   hardware even before #15 adds a real chip read. Values printed
-   milli-g/milli-deg-per-s scaled to an integer, same reason diag_telemetry()
-   avoids %f. Always FAILED / all-zero until #15 lands. */
+   hardware even before #15 adds a real chip read. Gated on HELM_HAS_IMU
+   -- the exact same condition main.c uses to decide whether imu_start()
+   ever runs -- not for link-time reasons (imu.c has no whole-file guard
+   like sport.c; it's unconditionally compiled, same as telemetry.c/
+   rx.c), but because imu_get_latest() peeks imu_queue, which stays NULL
+   if imu_start() was never called: configASSERT is a no-op in this
+   project's FreeRTOSConfig.h, so xQueuePeek() on a NULL handle would
+   fault, not gracefully no-op. Values printed milli-g/milli-deg-per-s
+   scaled to an integer, same reason diag_telemetry() avoids %f. Always
+   FAILED / all-zero until #15 lands. */
 static void diag_imu(void) {
     ImuSample sample;
     imu_get_latest(&sample);
