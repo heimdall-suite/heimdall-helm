@@ -110,13 +110,15 @@ notice a gap and *decide* to hold — holding is just what "no update
 happened" already looks like.
 
 A finer-grained frame-loss signal (SBUS's explicit bit, or a receive-age
-timer for CRSF) is real and useful, but as **diagnostic data for logging
-and telemetry** — link-quality/frame-loss-rate feedback — not as a third
-status tier other logic branches on. Keep it as a separate field (e.g. a
-last-frame-age or loss counter) alongside the `OK`/`FAILSAFE` status,
-consumed by logging/telemetry the same "latest value" way sensor data is,
-rather than folding it into the value that gates mapping-stage
-substitution.
+timer for CRSF) is real and useful, but as **diagnostic data for
+logging** — not as a third status tier other logic branches on, and not
+as telemetry content either: real link-quality/RSSI is the receiver's
+own responsibility to report, independent of the FC, on both protocols
+(see [telemetry.md](telemetry.md)'s "Link quality is not gathered here").
+Keep it as a separate field (e.g. a last-frame-age or loss counter)
+alongside the `OK`/`FAILSAFE` status, consumed by logging the same
+"latest value" way sensor data is, rather than folding it into the value
+that gates mapping-stage substitution.
 
 **No separate pipeline stage needed to normalize any of this** —
 `lib/rx/rx.h`'s interface contract already guarantees `sbus.c` and

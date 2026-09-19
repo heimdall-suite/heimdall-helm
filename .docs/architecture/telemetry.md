@@ -5,15 +5,12 @@ how this page fits with the rest of the architecture docs.
 
 Telemetry is one of three independent consumers of [sensor data](sensors.md)
 (alongside the [control loop](control-loops.md) and
-[logging](logging.md)), plus the RX-side diagnostic data
-([receiver-to-servo.md](receiver-to-servo.md)'s Failsafe section already
-flags link-quality/frame-loss as reportable but not control-relevant).
+[logging](logging.md)), reporting it back toward the pilot's radio.
 
 ```mermaid
 %%{init: {'theme': 'redux', 'look': 'neo'}}%%
 flowchart LR
     SENS["Sensors<br/>(onboard + peripheral)"]
-    RXD["RX diagnostics<br/>(link quality, frame loss)"]
     GATHER["Gather task<br/>xQueuePeek each source,<br/>per-field refresh interval"]
     TABLE["Telemetry table<br/>static, {value, status, last_updated}<br/>per semantic field"]
 
@@ -30,11 +27,30 @@ flowchart LR
     end
 
     SENS -.-> GATHER
-    RXD -.-> GATHER
     GATHER --> TABLE
     TABLE --> LOOKUP
     TABLE --> SCHEDULE
 ```
+
+## Link quality is not gathered here
+
+Real link-quality/RSSI is the receiver's own responsibility, on both
+protocols -- it never flows through the gather task or the table:
+
+- **CRSF**: the receiver injects its own Link Statistics frames into the
+  outbound telemetry schedule autonomously. The FC doesn't decode and
+  re-transmit this; the receiver reports itself.
+- **S.Port**: RSSI is one of the receiver's own sensor IDs on the bus,
+  answered by the receiver itself when polled -- again, not FC-produced.
+
+`RxFrame`'s `frame_loss_count`/`last_frame_age_ms`
+([receiver-to-servo.md](receiver-to-servo.md)) are a genuinely different,
+FC-local metric -- our own timeout watchdog noticing gaps, not an
+RF-level measurement. Since the receiver already reports the real number
+independently, pushing our synthetic version out as telemetry too would
+be redundant under the same "link quality" label. It stays useful for
+our own diagnostics (the `diag` CLI command, later blackbox logging) --
+just not as a telemetry table field.
 
 ## Protocol is the outermost layer
 
