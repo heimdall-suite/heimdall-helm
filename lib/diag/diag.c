@@ -13,6 +13,7 @@
 #include "sport.h"
 #endif
 #include "imu.h"
+#include "baro.h"
 
 /* `pipeline`: prints the Input->Mapping->Control->Output->Servo stub
    chain's (issue #7) final stage output -- the plumbing this chain
@@ -172,6 +173,26 @@ static void diag_imu(void) {
 }
 #endif
 
+#if HELM_HAS_BARO
+/* `baro`: dumps the baro sample queue's current state (issue #23), same
+   shape/gating reasoning as diag_imu() above (baro_get_latest() peeks
+   baro_queue, which is NULL if baro_start() was never called). Pressure
+   printed as a whole Pascal (no scaling needed -- station pressure is
+   ~100000 Pa, already meaningfully precise as an integer); temperature
+   milli-deg-C scaled, same reason diag_imu()/diag_telemetry() avoid
+   %f. */
+static void diag_baro(void) {
+    BaroSample sample;
+    baro_get_latest(&sample);
+
+    char line[96];
+    snprintf(line, sizeof(line), "baro: status=%-6s pressure_pa=%ld temp_mdegc=%ld\r\n",
+             sensor_status_name(sample.status), (long)sample.pressure_pa,
+             (long)(sample.temperature_c * 1000.0f));
+    shell_print(line);
+}
+#endif
+
 void diag_dispatch(const char *args) {
     if (strcmp(args, "pipeline") == 0) {
         diag_pipeline();
@@ -187,6 +208,10 @@ void diag_dispatch(const char *args) {
     } else if (strcmp(args, "imu") == 0) {
         diag_imu();
 #endif
+#if HELM_HAS_BARO
+    } else if (strcmp(args, "baro") == 0) {
+        diag_baro();
+#endif
     } else {
         shell_print("usage: diag <subcommand> -- available: pipeline, wedge, telemetry"
 #if HELM_HAS_SPORT_UART
@@ -194,6 +219,9 @@ void diag_dispatch(const char *args) {
 #endif
 #if HELM_HAS_IMU
                     ", imu"
+#endif
+#if HELM_HAS_BARO
+                    ", baro"
 #endif
                     "\r\n");
     }

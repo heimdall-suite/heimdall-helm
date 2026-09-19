@@ -600,6 +600,81 @@ void board_imu_spi_read_regs(uint8_t startReg, uint8_t *buf, uint8_t len) {
     imu_spi_cs_high();
 }
 
+/* Onboard I2C2 -- SCL=PB10, SDA=PB11 (AF4). See board.h's own comment for
+   pin/bus provenance and the idempotent-init reasoning. This board's IMU
+   is SPI-only, so this is a fresh peripheral bring-up, not a bus shared
+   with anything else yet (unlike afroflight32's I2C2, shared with its
+   IMU).
+
+   TIMINGR (Fast Mode, 400kHz) is computed, not guessed -- H7's I2C
+   peripheral takes a raw TIMINGR word (PRESC/SCLDEL/SDADEL/SCLH/SCLL),
+   not a simple ClockSpeed field the way F1's I2C does (see
+   boards/afroflight32/board.c's own I2C2 init for that simpler case).
+   Ported the exact calculation from Betaflight's real, deployed
+   drivers/bus_i2c_timing.c (i2cClockComputeRaw()/i2cClockTIMINGR(), the
+   same RM0433-derived formula ST's own CubeMX timing tool uses) and ran
+   it for this board's actual I2C2 kernel clock -- I2C123SEL defaults to
+   D2PCLK1 (APB1, confirmed against this project's own copy of
+   stm32h7xx_hal_rcc_ex.h: RCC_I2C123CLKSOURCE_D2PCLK1 is the reset
+   value, so nothing in system_clock_config() needs to override it),
+   which is 120MHz on Rev.V silicon (PCLK1 = HCLK/2 = 240MHz/2) or 100MHz
+   on older silicon (200MHz/2) -- same isRevV split system_clock_config()
+   already makes for the PLL. Results: 0x20F91940 (120MHz) /
+   0x20C71435 (100MHz), both for 400kHz with no extra digital filter
+   (dfcoeff=0, matching Betaflight's own AnalogFilter-only default). */
+#define I2C2_TIMING_120MHZ_400KHZ 0x20F91940U
+#define I2C2_TIMING_100MHZ_400KHZ 0x20C71435U
+
+static I2C_HandleTypeDef baroI2c;
+static bool baroI2cInitialized = false;
+
+void board_i2c2_init(void) {
+    if (baroI2cInitialized) {
+        return;
+    }
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_I2C2_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_10 | GPIO_PIN_11;
+    gpioInit.Mode = GPIO_MODE_AF_OD; /* open-drain -- wired-AND I2C bus */
+    gpioInit.Pull = GPIO_NOPULL;
+    gpioInit.Speed = GPIO_SPEED_FREQ_LOW;
+    gpioInit.Alternate = GPIO_AF4_I2C2;
+    HAL_GPIO_Init(GPIOB, &gpioInit);
+
+    bool const isRevV = (HAL_GetREVID() == REV_ID_V);
+
+    baroI2c.Instance = I2C2;
+    baroI2c.Init.Timing = isRevV ? I2C2_TIMING_120MHZ_400KHZ : I2C2_TIMING_100MHZ_400KHZ;
+    baroI2c.Init.OwnAddress1 = 0;
+    baroI2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    baroI2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    baroI2c.Init.OwnAddress2 = 0;
+    baroI2c.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+    baroI2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    baroI2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+    if (HAL_I2C_Init(&baroI2c) != HAL_OK) {
+        Error_Handler();
+    }
+
+    baroI2cInitialized = true;
+}
+
+bool board_i2c2_write_reg(uint8_t devAddr, uint8_t reg, uint8_t value) {
+    uint8_t const txBuf[2] = {reg, value};
+    return HAL_I2C_Master_Transmit(&baroI2c, (uint16_t)(devAddr << 1), (uint8_t *)txBuf, sizeof(txBuf),
+                                    HAL_MAX_DELAY) == HAL_OK;
+}
+
+bool board_i2c2_read_regs(uint8_t devAddr, uint8_t reg, uint8_t *buf, uint8_t len) {
+    if (HAL_I2C_Master_Transmit(&baroI2c, (uint16_t)(devAddr << 1), &reg, 1, HAL_MAX_DELAY) != HAL_OK) {
+        return false;
+    }
+    return HAL_I2C_Master_Receive(&baroI2c, (uint16_t)(devAddr << 1), buf, len, HAL_MAX_DELAY) == HAL_OK;
+}
+
 void board_init(void) {
     system_clock_config();
     led_init();

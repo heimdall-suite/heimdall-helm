@@ -33,6 +33,9 @@
 #if HELM_HAS_IMU
 #include "imu.h"
 #endif
+#if HELM_HAS_BARO
+#include "baro.h"
+#endif
 
 extern void xPortSysTickHandler(void);
 
@@ -167,6 +170,13 @@ int main(void) {
     // presence is a hardware fact, not a deliberate software toggle, per
     // .docs/architecture/sensors.md's "Onboard vs. peripheral" section.
     imu_start();
+#endif
+
+#if HELM_HAS_BARO
+    // Start the baro sensor module (issue #23) -- same shape as the IMU
+    // module above (imu_start()'s own comment): onboard sensor presence
+    // is a hardware fact (HELM_HAS_BARO), not a HELM_FEATURE_* toggle.
+    baro_start();
 #endif
 
 #if HELM_FEATURE_CLI

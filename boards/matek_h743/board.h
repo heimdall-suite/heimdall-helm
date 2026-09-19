@@ -184,4 +184,23 @@ void board_imu_spi_write_reg(uint8_t reg, uint8_t value);
    burst SPI transaction. */
 void board_imu_spi_read_regs(uint8_t startReg, uint8_t *buf, uint8_t len);
 
+/* Onboard I2C2 -- SCL=PB10, SDA=PB11. Confirmed against ArduPilot's
+   MatekH743/hwdef.dat and Betaflight's MTKS/MATEKH743 config (both
+   independently agree on PB10/PB11 for this board's I2C2), cross-checked
+   against this project's sibling aoa-boat-controller's
+   include/pins_h743.h (issue #23). This board's onboard DPS310 baro
+   lives here -- a different bus from the SPI1 IMU above, unlike
+   afroflight32 where IMU and baro share one I2C bus. Bus-level
+   primitives, not baro-specific: I2C1 (PB6/PB7, this board's external-
+   compass bus, not yet used by anything) is a separate peripheral
+   entirely, so there's no naming collision in leaving these generic for
+   whatever else ends up on I2C2 specifically.
+   board_i2c2_init() is safe to call more than once (idempotent). */
+void board_i2c2_init(void);
+
+/* Returns true on ack, false on a bus/communication failure (NACK,
+   timeout, arbitration loss). */
+bool board_i2c2_write_reg(uint8_t devAddr, uint8_t reg, uint8_t value);
+bool board_i2c2_read_regs(uint8_t devAddr, uint8_t reg, uint8_t *buf, uint8_t len);
+
 #endif /* HELM_BOARD_MATEK_H743_H */
