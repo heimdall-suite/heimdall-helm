@@ -1,5 +1,6 @@
 #include "board.h"
 #include "stm32h7xx_hal.h"
+#include "stm32h7xx_ll_usart.h"
 #include <stdbool.h>
 #include <string.h>
 
@@ -178,6 +179,27 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
    board today; the instance check just keeps this correct if that ever
    changes, at zero extra ceremony. */
 void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
+    if (huart->Instance == UART7) {
+        /* S.Port -- PE8, "TX7" silk. GPIO/clock/NVIC only, no DMA: this
+           peripheral is driven byte-by-byte from UART7_IRQHandler
+           itself (board_sport_uart_init()'s own comment), not through
+           HAL's transmit/receive path. */
+        __HAL_RCC_GPIOE_CLK_ENABLE();
+        __HAL_RCC_UART7_CLK_ENABLE();
+
+        GPIO_InitTypeDef gpioInit = {0};
+        gpioInit.Pin = GPIO_PIN_8;
+        gpioInit.Mode = GPIO_MODE_AF_PP;
+        gpioInit.Pull = GPIO_PULLUP;
+        gpioInit.Speed = GPIO_SPEED_FREQ_HIGH;
+        gpioInit.Alternate = GPIO_AF7_UART7;
+        HAL_GPIO_Init(GPIOE, &gpioInit);
+
+        HAL_NVIC_SetPriority(UART7_IRQn, 5, 0);
+        HAL_NVIC_EnableIRQ(UART7_IRQn);
+        return;
+    }
+
     if (huart->Instance != USART6) {
         return;
     }
@@ -280,6 +302,172 @@ bool board_sbus_uart_take_frame(uint8_t out[SBUS_UART_FRAME_LEN]) {
     __enable_irq();
 
     return true;
+}
+
+/* S.Port UART -- UART7/PE8. See board.h's own comment for the full
+   provenance (ported from aoa-boat-controller's bench-verified
+   SportUart) and why this bypasses HAL_UART_HandleTypeDef entirely for
+   this one peripheral. */
+
+#define SPORT_UART_RING_SIZE 32
+
+static volatile uint8_t sportRxBuf[SPORT_UART_RING_SIZE];
+static volatile uint8_t sportRxHead;
+static volatile uint8_t sportRxTail;
+
+static volatile uint8_t sportTxBuf[SPORT_UART_RING_SIZE];
+static volatile uint8_t sportTxHead;
+static volatile uint8_t sportTxTail;
+
+static TaskHandle_t sportRxTask;
+
+/* CR1: clear TE|RE, then set only RE -- idle/listening state. */
+static void sport_uart_enable_receive(void) {
+    CLEAR_BIT(UART7->CR1, USART_CR1_TE | USART_CR1_RE);
+    SET_BIT(UART7->CR1, USART_CR1_RE);
+}
+
+/* CR1: clear TE|RE, then set only TE -- about to drive the line. */
+static void sport_uart_enable_transmit(void) {
+    CLEAR_BIT(UART7->CR1, USART_CR1_TE | USART_CR1_RE);
+    SET_BIT(UART7->CR1, USART_CR1_TE);
+}
+
+void board_sport_uart_set_rx_task(TaskHandle_t task) {
+    sportRxTask = task;
+}
+
+void board_sport_uart_init(void) {
+    /* HAL_HalfDuplex_Init only for the one-time peripheral config (it
+       reads the actual configured clock tree for BRR rather than
+       needing hand-derived baud math, same reasoning board_sbus_uart_
+       init() relies on HAL_UART_Init for, and triggers HAL_UART_MspInit
+       above for GPIO/clock/NVIC) -- LL_USART_Init/LL_USART_InitTypeDef
+       would need USE_FULL_LL_DRIVER, which this project doesn't define,
+       so this reaches the same register state through HAL's init path
+       instead. Everything AFTER this call bypasses HAL entirely (no
+       HAL_UART_Transmit_IT -- see board.h's comment on why); the LL
+       bit-level calls/macros used below and in UART7_IRQHandler are
+       plain inline register accessors, not gated behind
+       USE_FULL_LL_DRIVER the way the *_Init family is. */
+    UART_HandleTypeDef sportUart = {0};
+    sportUart.Instance = UART7;
+    sportUart.Init.BaudRate = 57600; /* S.Port's fixed rate */
+    sportUart.Init.WordLength = UART_WORDLENGTH_8B;
+    sportUart.Init.StopBits = UART_STOPBITS_1;
+    sportUart.Init.Parity = UART_PARITY_NONE;
+    sportUart.Init.Mode = UART_MODE_TX_RX;
+    sportUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    sportUart.Init.OverSampling = UART_OVERSAMPLING_16;
+    sportUart.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    sportUart.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    /* S.Port is electrically inverted -- both directions, since this is
+       a real bus (SBUS's own RXINV-only AdvancedInit is one direction
+       for the same reason -- see board_sbus_uart_init()'s comment). */
+    sportUart.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_TXINVERT_INIT | UART_ADVFEATURE_RXINVERT_INIT;
+    sportUart.AdvancedInit.TxPinLevelInvert = UART_ADVFEATURE_TXINV_ENABLE;
+    sportUart.AdvancedInit.RxPinLevelInvert = UART_ADVFEATURE_RXINV_ENABLE;
+
+    if (HAL_HalfDuplex_Init(&sportUart) != HAL_OK) {
+        Error_Handler();
+    }
+
+    /* No overrun interrupt wired up -- this bus is low-traffic single-
+       byte polls; a slow reader just keeps the newest bytes instead of
+       needing an error-flag-clear path. Matches the reference driver. */
+    LL_USART_DisableOverrunDetect(UART7);
+
+    /* Idle state: listening -- narrows HAL_HalfDuplex_Init's TX_RX mode
+       down to RE-only. Every CR1 TE/RE change from here on goes through
+       this and sport_uart_enable_transmit() directly, never back
+       through HAL. */
+    sport_uart_enable_receive();
+
+    /* RX stays armed permanently -- poll detection needs every byte.
+       TXEIE/TCIE are left off here; board_sport_uart_write()/the ISR
+       arm them only around an actual send. */
+    LL_USART_EnableIT_RXNE(UART7);
+}
+
+bool board_sport_uart_available(void) {
+    return sportRxHead != sportRxTail;
+}
+
+uint8_t board_sport_uart_read_byte(void) {
+    uint8_t const b = sportRxBuf[sportRxTail];
+    sportRxTail = (uint8_t)((sportRxTail + 1) % SPORT_UART_RING_SIZE);
+    return b;
+}
+
+void board_sport_uart_write(const uint8_t *data, uint8_t length) {
+    for (uint8_t i = 0; i < length; i++) {
+        uint8_t const nextHead = (uint8_t)((sportTxHead + 1) % SPORT_UART_RING_SIZE);
+        while (nextHead == sportTxTail) {
+            /* Ring buffer full -- wait for the ISR to drain space. S.Port
+               frames are far smaller than SPORT_UART_RING_SIZE, so this
+               should never actually spin in practice (same assumption
+               the reference driver makes). */
+        }
+        sportTxBuf[sportTxHead] = data[i];
+        sportTxHead = nextHead;
+    }
+
+    /* Switch to drive mode before arming the interrupt that starts
+       feeding it, so there's no window where TXE could fire while still
+       listening. The ISR switches back once the whole frame has
+       genuinely finished (TC, not just TXE) -- see board.h's comment. */
+    sport_uart_enable_transmit();
+    LL_USART_EnableIT_TXE(UART7);
+}
+
+void UART7_IRQHandler(void) {
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    /* RX: pull any received byte into the ring buffer and wake the
+       registered task -- see board_sport_uart_set_rx_task(). Only
+       meaningful while RE is active (idle/listening). A full buffer
+       drops the byte rather than overwriting unread data; the notified
+       task drains every tick, so this realistically never fills. */
+    if (LL_USART_IsActiveFlag_RXNE(UART7)) {
+        uint8_t const b = (uint8_t)UART7->RDR;
+        uint8_t const nextHead = (uint8_t)((sportRxHead + 1) % SPORT_UART_RING_SIZE);
+        if (nextHead != sportRxTail) {
+            sportRxBuf[sportRxHead] = b;
+            sportRxHead = nextHead;
+        }
+        if (sportRxTask != NULL) {
+            vTaskNotifyGiveFromISR(sportRxTask, &higherPriorityTaskWoken);
+        }
+    }
+
+    /* TX: while TXEIE is armed and the shift register is ready, either
+       send the next queued byte or, once the buffer is empty, disable
+       TXEIE and arm TCIE instead -- no chunking, no per-byte software
+       re-arm, the interrupt just keeps re-firing on its own every time
+       the shift register empties, for as long as TXEIE stays set. */
+    if (LL_USART_IsEnabledIT_TXE(UART7) && LL_USART_IsActiveFlag_TXE(UART7)) {
+        if (sportTxTail == sportTxHead) {
+            /* Nothing left to queue -- but the last byte handed to the
+               shift register is still physically shifting out. TC (not
+               TXE) confirms it's actually gone. */
+            LL_USART_DisableIT_TXE(UART7);
+            SET_BIT(UART7->CR1, USART_CR1_TCIE);
+        } else {
+            UART7->TDR = sportTxBuf[sportTxTail];
+            sportTxTail = (uint8_t)((sportTxTail + 1) % SPORT_UART_RING_SIZE);
+        }
+    }
+
+    /* Transmission genuinely complete -- switch back to listening. Only
+       reached once TCIE was armed above, never spuriously on a stale
+       flag from before a send started. */
+    if ((UART7->CR1 & USART_CR1_TCIE) && LL_USART_IsActiveFlag_TC(UART7)) {
+        LL_USART_ClearFlag_TC(UART7);
+        CLEAR_BIT(UART7->CR1, USART_CR1_TCIE);
+        sport_uart_enable_receive();
+    }
+
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
 }
 
 /* IWDG1 -- issue #5. STM32H7's IWDG is clocked from LSI regardless of

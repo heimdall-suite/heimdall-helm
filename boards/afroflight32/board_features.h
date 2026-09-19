@@ -92,4 +92,12 @@
    the #7 pipeline was already bench-verified against on this board. */
 #define HELM_HAS_SBUS_UART 0
 
+/* HELM_HAS_SPORT_UART: no ported S.Port UART transport on this board --
+   see matek_h743/board_features.h's own comment for what this gates.
+   TODO if this board ever gets its own S.Port receiver wired: this
+   board's free UARTs would need checking against
+   aoa-boat-controller's Naze32 target first, not assumed from the
+   H743's UART7/PE8 choice. */
+#define HELM_HAS_SPORT_UART 0
+
 #endif /* HELM_BOARD_FEATURES_H */

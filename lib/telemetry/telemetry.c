@@ -28,10 +28,14 @@ static void telemetry_gather_task(void *arg) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(TELEMETRY_GATHER_PERIOD_MS));
 
-        /* Nothing to pull yet -- no sensor/RX source is registered with
-           this task (issue #17 adds the first one, sensor issues add
-           the rest). The queues exist and telemetry_set()/get() are
-           already fully usable by a direct caller in the meantime. */
+        /* Issue #17's synthetic end-to-end proof: uptime in seconds, an
+           unambiguous "is this alive" value that needs no real sensor
+           to exist yet -- same purpose aoa-boat-controller's own
+           heartbeat-sensor placeholder served for its first S.Port
+           bench test. No real source to pull from otherwise (sensor
+           issues add those); this is a direct telemetry_set() call, not
+           an xQueuePeek of anything. */
+        telemetry_set(TELEM_FIELD_TEST, (float)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000), TELEM_STATUS_OK);
     }
 }
 

@@ -68,4 +68,16 @@
    same as every driver was before #8). */
 #define HELM_HAS_SBUS_UART 1
 
+/* HELM_HAS_SPORT_UART: this board's real S.Port UART wiring
+   (board_sport_uart_* in board.c/board.h) is implemented and wired to a
+   real receiver -- UART7/PE8, silk-labeled "TX7", ported from
+   aoa-boat-controller's own bench-verified SportUart (issue #18). Gates
+   lib/telemetry/sport.c's entire body (see that file's own comment);
+   0 on boards without a ported S.Port UART transport, same category as
+   HELM_HAS_SBUS_UART above. Independent of HELM_FEATURE_TELEMETRY_SPORT
+   (board "wants" S.Port telemetry) the same way HELM_HAS_ROM_BOOTLOADER_DFU
+   is independent of HELM_FEATURE_CLI -- see .docs/cli.md's own comment
+   on why these stay two separate flags. */
+#define HELM_HAS_SPORT_UART 1
+
 #endif /* HELM_BOARD_FEATURES_H */
