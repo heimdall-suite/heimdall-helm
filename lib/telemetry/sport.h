@@ -10,10 +10,17 @@
    boards/matek_h743/board.h's own comment for the transport this rides
    on (UART7/PE8, "TX7" silk).
 
-   Poll-response only, matching aoa-boat-controller's own first working
-   S.Port pass -- write direction (Lua push / MSP-style commands) is
-   explicitly out of scope here, same as that project's first
-   implementation was.
+   Bidirectional as of issue #42: poll-response (FC -> radio, issue #18)
+   plus a push/write path (radio -> FC, Lua's sportTelemetryPush()
+   setting one output.c calibration param at a time, #39's params-backed
+   min/max/subtrim/reverse) -- ported from Betaflight's own real,
+   production telemetry/smartport.c receive state machine, not
+   aoa-boat-controller's own never-bench-verified SportSensor/
+   SportCommand attempt at the same feature (see sport.c's own
+   sport_receive_byte() comment for the full citation and reasoning).
+   CLI's `param set` (#39) remains a fully-equivalent fallback for
+   setting the same values if this path doesn't get bench-verified
+   against a real transmitter in time for a given race.
 
    sport.c's entire body is guarded on HELM_HAS_SPORT_UART -- boards
    without a ported board_sport_uart_* transport (board.h) compile this

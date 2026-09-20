@@ -12,6 +12,9 @@
 #include "task.h"
 #include "board.h"
 #include "telemetry.h"
+#if HELM_FEATURE_PARAMS_PERSIST
+#include "params.h"
+#endif
 
 /* Physical ID this board answers under -- 0x1B, one of four values
    Betaflight reserves for FC-as-sensor use (FSSP_SENSOR_ID1),
@@ -22,6 +25,34 @@
    project's own bus -- same proven-safe-placeholder status it carried
    there. */
 #define SPORT_PHYSICAL_ID 0x1B
+
+/* Issue #42 -- push/write direction. Physical ID a Lua
+   sportTelemetryPush() call rides on -- 0x0D, Betaflight's own
+   FSSP_SENSOR_ID2 (telemetry/smartport.h), one of the reserved sensor
+   IDs a real FrSky receiver's poll round-robin always cycles through
+   regardless of whether a real sensor answers it, which is exactly what
+   a Lua push piggybacks on. Verified against that real, working,
+   production implementation (master branch, checked 2026-09-21) --
+   NOT aoa-boat-controller's own kPushPhysicalId, even though that
+   project happened to pick the same value; this project's own choice is
+   independently grounded in the real Betaflight source, not carried
+   over from that project's unverified attempt (see sport_receive_byte()
+   below for the fuller reasoning on why this diverges from that
+   project's design past the physical ID). */
+#define SPORT_PUSH_PHYSICAL_ID 0x0D
+
+/* This project's own frameId for "set one calibration param" push
+   frames -- deliberately NOT Betaflight's real MSP-over-telemetry
+   frameIds (FSSP_MSPC_FRAME_SMARTPORT 0x30 / FSSP_MSPC_FRAME_FPORT 0x31
+   / FSSP_MSPS_FRAME 0x32, telemetry/smartport.h), since this project
+   doesn't implement generic MSP request/response reassembly -- the
+   actual need ("set one params.h ParamId to one u32 value") fits in a
+   single unchunked frame, so building a full MSP layer would be scope
+   nobody asked for. Picked from the unclaimed range above
+   FSSP_MSPS_FRAME and below this project's own DIY telemetry-data-ID
+   block (SPORT_TEST_DATA_ID etc., a different ID space -- frameId and
+   dataId are unrelated fields -- kept visually distinct anyway). */
+#define SPORT_SET_PARAM_FRAME_ID 0x50
 
 /* Plain-DIY data ID (0x5100-0x52FF range) for TELEM_FIELD_TEST -- same
    ID and justification aoa-boat-controller used for its own heartbeat
@@ -235,39 +266,144 @@ static uint8_t sport_build_data_frame(uint8_t *bytes, uint16_t dataId, int32_t v
     return length;
 }
 
-/* Poll-detection state machine, one byte at a time -- mirrors
-   aoa-boat-controller's own SportSensor::checkPoll() (poll-only half;
-   this project doesn't implement the write-direction/push-frame path,
-   see sport.h). The poll marker and physical-ID byte are never
-   themselves stuffed (specifically chosen values that never collide
-   with SPORT_START_STOP) -- stuffing only applies to frame payload
-   bytes, so this check doesn't need any destuffing logic of its own. */
+/* Poll/push receive state machine, one byte at a time. The poll-only
+   half mirrors the original version (aoa-boat-controller's own
+   SportSensor::checkPoll()); the push half (issue #42) is ported from
+   Betaflight's own telemetry/smartport.c smartPortDataReceive() (master
+   branch, checked 2026-09-21) -- the real, production S.Port receive
+   state machine any Lua sportTelemetryPush() call actually rides on,
+   used deliberately INSTEAD OF aoa-boat-controller's own SportSensor/
+   SportCommand attempt at the same feature: that project's own code
+   comments flag its push-decode path as never bench-tested against a
+   real EdgeTX push call (issue #42's own body has the full citation),
+   where this one is copied from a mechanism already proven in
+   production by every real Betaflight OSD/config Lua script that uses
+   MSP-over-telemetry. This project's own outbound checksum convention
+   (sport_build_data_frame(): running additive sum, final byte = 0xFF
+   minus that sum) and Betaflight's inbound check below (accumulate
+   EVERY byte including the checksum byte itself, valid iff the 8-bit
+   fold equals exactly 0xFF) are the same algorithm viewed from either
+   end -- the inbound side never needs to separately compute "what
+   should the checksum have been."
+
+   The poll marker and physical-ID byte are never themselves stuffed
+   (specifically chosen values that never collide with SPORT_START_STOP)
+   -- destuffing only applies to payload bytes, handled inside the push
+   half below. */
 typedef enum {
     SPORT_RX_IDLE,
     SPORT_RX_AWAITING_ID,
+    SPORT_RX_PUSH_PAYLOAD,
 } SportRxState;
 
 static SportRxState sportRxState = SPORT_RX_IDLE;
+static bool sportRxByteStuffing;
+
+/* frameId(1) + valueId(2, little-endian) + data(4, little-endian) --
+   matches smartPortPayload_t's real on-wire shape (telemetry/
+   smartport.h), reconstructed by hand from raw bytes below rather than
+   overlaid via a packed struct pointer -- same "manual little-endian
+   byte assembly, no struct-cast-onto-a-buffer" discipline this file's
+   own sport_build_data_frame() already uses for the outbound direction. */
+static uint8_t sportPushBuf[7];
+static uint8_t sportPushLen;
+static uint16_t sportPushChecksum;
 
 /* Bench diagnostics -- see sport.h's own comment. */
 static uint32_t sportPollMarkerCount;
 static uint32_t sportPollMatchCount;
 
-/* Returns true exactly once per poll addressed to us. */
-static bool sport_check_poll(uint8_t b) {
+#if HELM_FEATURE_PARAMS_PERSIST
+/* Applies one successfully-decoded, checksum-valid SPORT_SET_PARAM_
+   FRAME_ID frame (sport_receive_byte() below already checked the
+   frameId before calling this). Only ever writes output.c's own
+   params-backed calibration block (#39) -- PARAM_OUTPUT_SLOT_BASE
+   .. PARAM_COUNT-1 -- never any other param (input_mode, servo_rate,
+   ...), regardless of what valueId a malformed or unexpected frame
+   claims: a stray/malicious push silently overwriting the RX protocol
+   pick or PWM rate mid-race would be a far worse failure than just
+   being ignored.
+
+   No ack/reply frame sent back in this first pass (issue #42's own
+   scope, matching every other placeholder-period stage in this
+   codebase's history) -- output.c's own per-tick calibration reload
+   (#39 follow-up) means the servo itself visibly moving is the
+   confirmation, same as a CLI `param set` today. */
+static void sport_apply_push(uint16_t valueId, uint32_t data) {
+    if (valueId < PARAM_OUTPUT_SLOT_BASE || valueId >= PARAM_COUNT) {
+        return;
+    }
+    param_set_u32((ParamId)valueId, data);
+}
+#endif
+
+/* Returns true exactly once per poll addressed to our own response ID
+   (SPORT_PHYSICAL_ID) -- same observable behavior/call-site contract as
+   the original poll-only version. Push-frame bytes (physical ID
+   SPORT_PUSH_PHYSICAL_ID) are consumed and applied entirely inside this
+   function; a complete, checksum-valid one calls sport_apply_push()
+   directly and never surfaces to the caller. */
+static bool sport_receive_byte(uint8_t b) {
     if (b == SPORT_START_STOP) {
         sportRxState = SPORT_RX_AWAITING_ID;
+        sportRxByteStuffing = false;
         sportPollMarkerCount++;
         return false;
     }
 
     if (sportRxState == SPORT_RX_AWAITING_ID) {
         sportRxState = SPORT_RX_IDLE;
-        bool const matched = b == SPORT_PHYSICAL_ID;
-        if (matched) {
+        if (b == SPORT_PHYSICAL_ID) {
             sportPollMatchCount++;
+            return true;
         }
-        return matched;
+        if (b == SPORT_PUSH_PHYSICAL_ID) {
+            sportRxState = SPORT_RX_PUSH_PAYLOAD;
+            sportPushLen = 0;
+            sportPushChecksum = 0;
+        }
+        return false;
+    }
+
+    if (sportRxState == SPORT_RX_PUSH_PAYLOAD) {
+        if (b == SPORT_DLE) {
+            sportRxByteStuffing = true;
+            return false;
+        }
+        if (sportRxByteStuffing) {
+            b = (uint8_t)(b ^ SPORT_DLE_XOR);
+            sportRxByteStuffing = false;
+        }
+
+        if (sportPushLen < sizeof(sportPushBuf)) {
+            sportPushBuf[sportPushLen++] = b;
+            sportPushChecksum = (uint16_t)(sportPushChecksum + b);
+            return false;
+        }
+
+        /* This byte is the checksum itself -- frame complete either
+           way, resync to the next poll marker regardless of whether
+           it's valid (same unconditional resync
+           smartPortDataReceive()'s own trailing branch uses -- there,
+           skipUntilStart = true is set before the pass/fail check too,
+           not only on success). */
+        sportRxState = SPORT_RX_IDLE;
+        sportPushChecksum = (uint16_t)(sportPushChecksum + b);
+        sportPushChecksum = (uint16_t)((sportPushChecksum & 0xFF) + (sportPushChecksum >> 8));
+        if (sportPushChecksum != 0xFF) {
+            return false;
+        }
+
+#if HELM_FEATURE_PARAMS_PERSIST
+        uint8_t const frameId = sportPushBuf[0];
+        if (frameId == SPORT_SET_PARAM_FRAME_ID) {
+            uint16_t const valueId = (uint16_t)(sportPushBuf[1] | (sportPushBuf[2] << 8));
+            uint32_t const data = (uint32_t)sportPushBuf[3] | ((uint32_t)sportPushBuf[4] << 8) |
+                                   ((uint32_t)sportPushBuf[5] << 16) | ((uint32_t)sportPushBuf[6] << 24);
+            sport_apply_push(valueId, data);
+        }
+#endif
+        return false;
     }
 
     return false;
@@ -296,7 +432,7 @@ static void sport_task(void *arg) {
 
         while (board_sport_uart_available()) {
             uint8_t const b = board_sport_uart_read_byte();
-            if (sport_check_poll(b)) {
+            if (sport_receive_byte(b)) {
                 uint8_t const fieldIndex = sportFieldIndex;
                 sportFieldIndex = (uint8_t)((sportFieldIndex + 1) % SPORT_FIELD_COUNT);
 
