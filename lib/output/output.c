@@ -376,6 +376,17 @@ static void output_task(void *arg) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(OUTPUT_TASK_PERIOD_MS));
 
+        /* Re-read calibration from the param store every tick, not just
+           once at output_start() -- otherwise a `param set` (CLI, #39,
+           or a future S.Port push, #42) would silently do nothing until
+           the next reboot, defeating the entire point of making this
+           runtime-settable. Cost is trivial: param_get_u32() only ever
+           reads params.c's own RAM cache, never touches flash (that only
+           happens on a write) -- a handful of array reads every 20ms,
+           same "latest value, poll don't push" philosophy every other
+           stage in this chain already uses. */
+        load_slot_calibration();
+
         MappingFrame mapping;
         mapping_get_latest(&mapping);
         ControlFrame control;
