@@ -13,6 +13,17 @@
 #define OUTPUT_TASK_PERIOD_MS 20
 #define OUTPUT_TASK_PRIORITY 1
 
+/* Real per-servo physical units (issue #31): standard hobby PWM servo
+   range, microseconds, ready to write into servo.c's own timer CCR
+   registers with no further conversion -- servo.c's own SERVO_PWM_
+   SAFE_CENTER_US matches OUTPUT_SERVO_CENTER_US here deliberately.
+   Replaces the placeholder raw-tick-like convention every output range
+   used before this issue (output.h's own comment already flagged this
+   as deferred to #31). */
+#define OUTPUT_SERVO_MIN_US 1000U
+#define OUTPUT_SERVO_CENTER_US 1500U
+#define OUTPUT_SERVO_MAX_US 2000U
+
 typedef enum {
     OUTPUT_SOURCE_PASSTHROUGH,
     OUTPUT_SOURCE_PITCH_CONTROL,
@@ -69,18 +80,20 @@ typedef struct {
     uint16_t failsafeFixedValue;
 } OutputSlotConfig;
 
-/* Issue #36/#37's first-pass hardcoded table -- same "prove the
+/* Issue #36/#37/#31's first-pass hardcoded table -- same "prove the
    mechanism, real per-user config is later params-backed work" scope
    #34/#35 used for their own tables. One control-loop-fed slot (Pitch,
    #35); every other slot is a straight passthrough of the same-numbered
-   channel. S1/OUT1 is deliberately configured reversed, fixed-failsafe,
-   AND with an asymmetric, non-identity output range (300/900/1700, not
-   RX_CHANNEL_RAW_MIN/CENTER/MAX) -- arbitrary demo numbers, not a real
-   calibrated servo limit, chosen so this pass actually exercises
-   piecewise scaling, not just an identity passthrough that happens to
-   look right by coincidence. Every other slot's output range is
-   RX_CHANNEL_RAW_MIN/CENTER/MAX, an identity mapping, so #36's own
-   already-bench-verified numbers for those slots don't change.
+   channel. Every slot's output range is the standard hobby-servo
+   1000/1500/2000us endpoint+center (issue #31 -- real physical units
+   now that a real PWM driver exists to receive them, not the placeholder
+   raw-tick-like convention #36/#37 used before this). S1/OUT1 is
+   deliberately configured reversed, fixed-failsafe, AND with a modest
+   asymmetric subtrim (1000/1550/2000, not a plain symmetric 1500
+   center) -- safe, plausible real servo-trim numbers, not the wild
+   demo range #37 used before real PWM existed to actually receive
+   them, chosen so this pass still exercises piecewise scaling, not just
+   an identity passthrough that happens to look right by coincidence.
 
    Per-board table, not one shared array -- HELM_SERVO_COUNT differs
    (board_features.h), and output.c is a single shared file (no
@@ -88,64 +101,74 @@ typedef struct {
    between boards here is just a data table, not different logic) --
    same `#if defined(STM32H7)` chip-family branching src/main.c already
    uses for its own per-family HAL include. */
+/* Slot names are the board's REAL physical silkscreen labels (S3-S10),
+   NOT a generic S1-S8 index -- this board has no S1/S2 servo pads at
+   all (see servo.c's own padConfigs[] comment: "Output3 (PA0/TIM5_CH1)
+   is bench-confirmed..."). An earlier pass of this table used S1-S8,
+   which matched nothing on the physical board and cost real bench time
+   chasing a "no PWM signal" that was actually a probe on a nonexistent
+   pad -- exactly the "wrong pairing hidden behind a table nothing
+   double-checks against the datasheet" failure mode this project's own
+   servo.c comments already warn about, just one level up from where
+   that warning was originally aimed. */
 #if defined(STM32H7)
 static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
-    {.name = "S1",
-     .source = OUTPUT_SOURCE_PASSTHROUGH,
-     .channelIndex = 0,
-     .outputMin = 300,
-     .outputCenter = 900,
-     .outputMax = 1700,
-     .reversed = true,
-     .failsafePolicy = OUTPUT_FAILSAFE_FIXED,
-     .failsafeFixedValue = 900},
-    {.name = "S2",
-     .source = OUTPUT_SOURCE_PITCH_CONTROL,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
-     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "S3",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
-     .channelIndex = 2,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
-     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+     .channelIndex = 0,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = 1550,
+     .outputMax = OUTPUT_SERVO_MAX_US,
+     .reversed = true,
+     .failsafePolicy = OUTPUT_FAILSAFE_FIXED,
+     .failsafeFixedValue = 1550},
     {.name = "S4",
-     .source = OUTPUT_SOURCE_PASSTHROUGH,
-     .channelIndex = 3,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .source = OUTPUT_SOURCE_PITCH_CONTROL,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "S5",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
-     .channelIndex = 4,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .channelIndex = 2,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "S6",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
-     .channelIndex = 5,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .channelIndex = 3,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "S7",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
-     .channelIndex = 6,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .channelIndex = 4,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "S8",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 5,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S9",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 6,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S10",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
      .channelIndex = 7,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
 };
 #elif defined(STM32F1)
@@ -153,45 +176,45 @@ static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
     {.name = "OUT1",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
      .channelIndex = 0,
-     .outputMin = 300,
-     .outputCenter = 900,
-     .outputMax = 1700,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = 1550,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .reversed = true,
      .failsafePolicy = OUTPUT_FAILSAFE_FIXED,
-     .failsafeFixedValue = 900},
+     .failsafeFixedValue = 1550},
     {.name = "OUT2",
      .source = OUTPUT_SOURCE_PITCH_CONTROL,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "OUT3",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
      .channelIndex = 2,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "OUT4",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
      .channelIndex = 3,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "OUT5",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
      .channelIndex = 4,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
     {.name = "OUT6",
      .source = OUTPUT_SOURCE_PASSTHROUGH,
      .channelIndex = 5,
-     .outputMin = RX_CHANNEL_RAW_MIN,
-     .outputCenter = RX_CHANNEL_RAW_CENTER,
-     .outputMax = RX_CHANNEL_RAW_MAX,
+     .outputMin = OUTPUT_SERVO_MIN_US,
+     .outputCenter = OUTPUT_SERVO_CENTER_US,
+     .outputMax = OUTPUT_SERVO_MAX_US,
      .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
 };
 #else

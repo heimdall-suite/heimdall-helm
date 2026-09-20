@@ -26,6 +26,14 @@
 ParamDef const g_paramDefs[PARAM_COUNT] = {
     {"test_counter", PARAM_TYPE_U32, 0},
     {"input_mode", PARAM_TYPE_U32, HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U},
+    /* servo_rate's default is 0 (SERVO_RATE_50HZ, lib/servo/servo.h) on
+       every board -- unlike input_mode, this isn't a per-board hardware
+       fact (no board_features.h flag drives it): 50Hz is simply the safe
+       universal default that works with any servo, chosen once here for
+       every target rather than duplicated per board_features.h. Raw 0U,
+       not servo.h's SERVO_RATE_50HZ, for the same reason input_mode uses
+       raw 0U/1U above -- no include path to lib/servo/ from this file. */
+    {"servo_rate", PARAM_TYPE_U32, 0U},
 };
 
 /* magic+version+CRC-validated record, same convention as
@@ -37,18 +45,14 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    than misread -- same convention that codebase's UserPinConfig::kVersion
    comment documents. */
 #define PARAMS_MAGIC 0xA5U
-/* Bumped 1->2 for issue #10: adding PARAM_INPUT_MODE grew values[] from
-   1 to 2 u32s, which is exactly the "field added" shape change this
-   file's own convention (below) requires a version bump for -- a stale
-   1-value record read into the new 2-value struct would have its second
-   value silently reinterpreted from the old record's crc byte (plus its
-   own zeroed trailing pad) instead of falling back to input_mode's real
-   default. Caught bench-side on afroflight32 (issue #32's own leftover
-   persisted record from that issue's testing, still on that board's
-   flash page since reflashing app code never touches this reserved
-   region): input_mode read back as 233 -- a real, non-default byte
-   value, not a benign misread -- before this bump was added. */
-#define PARAMS_VERSION 2U
+/* Bumped 1->2 for issue #10 (adding PARAM_INPUT_MODE grew values[] from 1
+   to 2 u32s -- see git history for the full account of the bug this
+   caught: a stale 1-value record misread as 2-value, input_mode reading
+   back as 233 instead of falling back to its default). Bumped 2->3 for
+   issue #31 (adding PARAM_SERVO_RATE grows values[] again, 2->3 u32s) --
+   same shape change, same reasoning, applied proactively this time
+   rather than caught by a repeat of that same bug. */
+#define PARAMS_VERSION 3U
 
 typedef struct {
     uint8_t magic;

@@ -146,33 +146,40 @@ int main(void) {
 
 #if HELM_FEATURE_PARAMS_PERSIST
     // Load the persisted-param store (issue #32) before anything that
-    // reads from it -- rx_start() below is the reason this call sits
-    // before the pipeline, not just alphabetical convenience: #10's
-    // input-mode param has to be in the RAM cache before rx_start()
-    // binds a driver from it. Synchronous, not a task: reads a
-    // fixed-size flash region into a RAM cache once, same "direct call
-    // before the scheduler starts" shape as board_init() above, not a
-    // _start()-a-task module like the ones below it.
+    // reads from it -- this call sits before the pipeline, not just
+    // alphabetical convenience: rx_start()'s input-mode param (#10) and
+    // servo_start()'s PWM frame-rate param (#31) both have to be in the
+    // RAM cache before those _start() calls read them. Synchronous, not
+    // a task: reads a fixed-size flash region into a RAM cache once,
+    // same "direct call before the scheduler starts" shape as
+    // board_init() above, not a _start()-a-task module like the ones
+    // below it.
     params_init();
 #endif
 
-    // Start the Input->Mapping->Control->Output->Servo stub chain (issue
-    // #7), each stage its own task/queue/supervisor-registered module
-    // per .docs/architecture/module-architecture.md, wired in this
-    // pipeline order (though that order isn't actually load-bearing: every
-    // module's queue is created and seeded here, before
+    // Start the Input->Mapping->Control->Output->Servo chain (issue #7's
+    // original stub, since replaced stage by stage), each stage its own
+    // task/queue/supervisor-registered module per .docs/architecture/
+    // module-architecture.md, wired in this pipeline order (though that
+    // order isn't actually load-bearing for the queue/seed mechanics:
+    // every module's queue is created and seeded here, before
     // vTaskStartScheduler(), so no consumer can run before a producer's
-    // queue holds a valid value regardless of _start() call order).
-    // rx_start()'s driver pick reads the persisted input-mode param when
-    // HELM_FEATURE_PARAMS_PERSIST is on, else board_features.h's
-    // compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF default (issue
-    // #6, runtime pick added by #10); every stage past it is a fixed
-    // passthrough stand-in, no real mapping table or control-loop math
-    // yet -- see each module's own header. This
-    // #include chain is also what pulls lib/rx/ (and these new libs) into
-    // the build via the LDF's normal chain scan -- see platformio.ini's
-    // header comment for why lib/rx/, unlike lib/bootloader/ and
-    // lib/usb_cdc/, doesn't need an explicit add_rx.py/lib_ignore bypass.
+    // queue holds a valid value regardless of _start() call order --
+    // params_init() above is the one real exception, since rx_start()/
+    // servo_start() actively read from its cache during their own
+    // _start(), not just via a queue). rx_start()'s driver pick reads the
+    // persisted input-mode param when HELM_FEATURE_PARAMS_PERSIST is on,
+    // else board_features.h's compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/
+    // _CRSF default (issue #6, runtime pick added by #10). mapping.c
+    // (#34), control.c (#35), and output.c (#36/#37) are real, if
+    // first-pass/hardcoded, logic now -- see each module's own header for
+    // what "real" means at each stage. servo.c (#31) drives actual PWM
+    // hardware, frame rate resolved from the same persisted-param
+    // mechanism as rx_start()'s pick. This #include chain is also what
+    // pulls lib/rx/ (and these other libs) into the build via the LDF's
+    // normal chain scan -- see platformio.ini's header comment for why
+    // lib/rx/, unlike lib/bootloader/ and lib/usb_cdc/, doesn't need an
+    // explicit add_rx.py/lib_ignore bypass.
     rx_start();
     mapping_start();
     control_start();

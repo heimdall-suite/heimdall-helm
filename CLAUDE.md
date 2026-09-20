@@ -25,11 +25,21 @@ built-in serial bootloader instead. Both boards' CLIs now have a software
 (issue #28 added afroflight32's, over the same UART/AN3155 protocol,
 alongside matek_h743's existing USB-DFU one) — no manual BOOT0-strap
 needed for either board anymore. See `.agents/AGENTS.md` and
-`.docs/cli.md` for the full story. The actual module/scheduler
-architecture (extensibility, fault isolation/HA) is still undesigned — the
-current `src/main.c` is a bring-up stub (one heartbeat task per board), not
-the real firmware structure. Confirm architecture direction with the user
-before building it out.
+`.docs/cli.md` for the full story. The Input→Mapping→Control→Output→Servo
+chain (issue #7's original bring-up stub) now has real logic end to end
+on both boards, not just plumbing: real SBUS decode on matek_h743 with
+runtime SBUS/CRSF selection via a persisted param (issue #10); a
+first-pass, hardcoded function/input mapping (issue #34) and a
+placeholder no-op control loop (issue #35) feeding real output mapping
+with per-slot failsafe/reverse/endpoint calibration (issues #36/#37);
+driving a real PWM servo driver with a persisted, per-boat frame-rate
+choice (50/250/333Hz), bench-verified against real hardware with an
+external USB logic analyzer, not just CLI-reported values (issue #31).
+Real per-axis control-loop math (PID/attitude hold) and a genuinely
+configurable, params-backed function/output mapping table (today's
+tables are hardcoded, proving the mechanism, not final per-boat config)
+are still future work. Confirm further architecture direction with the
+user before building those out.
 
 Build: `pio run -e <matek_h743|afroflight32|nexus_xr>` (from repo root;
 `nexus_xr` fails intentionally). No lint/test commands yet.

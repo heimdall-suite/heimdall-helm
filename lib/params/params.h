@@ -35,6 +35,12 @@ typedef enum {
                                 RX_INPUT_MODE_SBUS/_CRSF (rx.h). First real
                                 consumer of this store; test_counter above stays
                                 for now (see its own comment). */
+    PARAM_SERVO_RATE,       /* issue #31 -- lib/servo/servo.c's PWM frame rate,
+                                one setting for every output slot (period is a
+                                per-timer property, shared across every channel
+                                on it -- not something that can differ per slot
+                                within a timer group, let alone per board).
+                                SERVO_RATE_50HZ/_333HZ (servo.h). */
     PARAM_COUNT,
 } ParamId;
 

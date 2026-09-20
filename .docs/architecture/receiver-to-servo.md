@@ -213,5 +213,31 @@ slot a signal lands on.
 ## Servo driver
 
 Takes the final per-servo values from the output mapping stage and drives
-the actual PWM/output hardware. Doesn't know or care whether a given
-servo's value came from passthrough or a control loop.
+the actual PWM/output hardware (issue #31: standard STM32 timer output-
+compare PWM, one shared implementation for both boards). Doesn't know or
+care whether a given servo's value came from passthrough or a control
+loop.
+
+PWM frame rate (50Hz, the standard hobby-servo rate, or 250Hz/333Hz for
+digital servos that support one of those) is one persisted setting for
+every slot, not per-slot or per-timer — period is a per-timer property,
+shared across every channel on it, so slots sharing a timer group can
+never run at different rates. Whether every servo on a given timer group
+actually supports the selected rate is a fact about that specific
+installation's hardware, not something this driver can verify on its
+own — put servos with different rate ceilings on different timer
+groups if they need different rates (this project's own bench mix:
+AGFRC B24CLM/B44DLM at 333Hz, a BMS-760MG at 250Hz).
+
+Bench-verified with a real external USB logic analyzer (sigrok/
+fx2lafw, issue #31), not just CLI-reported values: both period and pulse
+width measured directly on matek_h743's S3 output at all three rates --
+50Hz (20.0ms / 7.75% duty), 250Hz (4.0ms / 38.75% duty), and 333Hz
+(3.0ms / 51.67% duty) -- matching the commanded value exactly in every
+case. This same pass caught a real bug: output.c's slot names were
+originally a generic S1-S8, not this board's actual physical silkscreen
+labels (S3-S10 -- see servo.c's own padConfigs[] comment) -- a probe on
+the board's real "S1" pad (which drives nothing) read as no signal at
+all until the naming was corrected to match, exactly the "wrong pairing
+hidden behind a table nothing double-checks against the datasheet"
+failure mode issue #31's own text already warned about.
