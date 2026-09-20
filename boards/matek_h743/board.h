@@ -203,4 +203,29 @@ void board_i2c2_init(void);
 bool board_i2c2_write_reg(uint8_t devAddr, uint8_t reg, uint8_t value);
 bool board_i2c2_read_regs(uint8_t devAddr, uint8_t reg, uint8_t *buf, uint8_t len);
 
+/* Battery voltage/current sense -- ADC1, PC0 (VBAT) + PC1 (CURR), this
+   board's onboard PDB (power distribution board) feature, not a chip on
+   a bus -- issue #24's own body has the full provenance: both pins
+   cross-checked against ArduPilot's MatekH743 hwdef.dat
+   (BATT_VOLTAGE_SENS/BATT_CURRENT_SENS) and Betaflight's unified-target
+   config (ADC_BATT/ADC_CURR) for this exact board, agreeing on PC0/PC1,
+   ADC1. Raw 12-bit ADC counts only here -- board owns the peripheral,
+   lib/sensors/battery.c owns the divider-scale/amps-per-volt math, same
+   board-owns-the-bus/lib-owns-the-protocol split board_imu_spi_*()
+   already established.
+
+   ADC clock kept deliberately slow/conservative (per_ck, defaulting to
+   HSI ~64MHz since nothing in system_clock_config() touches CKPERSEL or
+   enables PLL2, divided by 16 to ~4MHz) for a safe first bring-up --
+   comfortably under every H7 boost-mode threshold in RM0433, so HAL's
+   own automatic boost configuration (ADC_ConfigureBoostMode, called
+   internally by HAL_ADC_Init) stays disabled. NOT bench-verified against
+   a real calibrated voltage source yet -- treat readings as unconfirmed
+   until checked against a known battery/PSU voltage on the bench, same
+   "bench-confirm before trusting" discipline board_imu_spi_init()'s own
+   comment already applies to its SPI clock pick. */
+void board_battery_adc_init(void);
+uint16_t board_battery_adc_read_vbat_raw(void);
+uint16_t board_battery_adc_read_curr_raw(void);
+
 #endif /* HELM_BOARD_MATEK_H743_H */

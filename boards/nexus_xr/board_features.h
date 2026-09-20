@@ -7,6 +7,7 @@
 #define HELM_HAS_MAG 0
 #define HELM_HAS_GPS 0
 #define HELM_HAS_BLACKBOX_STORAGE 0
+#define HELM_HAS_BATTERY_SENSE 0
 
 #define HELM_FEATURE_BLACKBOX 0
 /* HELM_FEATURE_TELEMETRY: the protocol-agnostic gather task + table

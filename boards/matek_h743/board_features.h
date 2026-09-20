@@ -11,6 +11,10 @@
 #define HELM_HAS_MAG 0   /* not wired, confirmed absent as of last check */
 #define HELM_HAS_GPS 0   /* not wired, confirmed absent as of last check */
 #define HELM_HAS_BLACKBOX_STORAGE 0 /* no SD/flash wired for logging on this unit -- TODO */
+#define HELM_HAS_BATTERY_SENSE 1 /* onboard PDB (power distribution board), ADC1
+                                     PC0 (VBAT) + PC1 (CURR) -- confirmed against
+                                     ArduPilot/Betaflight targets for this exact
+                                     board, see issue #24's own body */
 
 /* HELM_FEATURE_*: software capability toggles. Nothing is implemented yet
    (see repo root README Status) -- these declare INTENT for the module

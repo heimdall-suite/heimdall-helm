@@ -17,6 +17,10 @@
 #define HELM_HAS_MAG 0   /* not confirmed wired -- TODO */
 #define HELM_HAS_GPS 0   /* not confirmed wired -- TODO */
 #define HELM_HAS_BLACKBOX_STORAGE 1 /* 2MB SPI NOR on SPI2, all 4 pins free -- confirmed */
+#define HELM_HAS_BATTERY_SENSE 0 /* no onboard voltage/current-sense equivalent
+                                     of matek_h743's PDB documented for this
+                                     board -- TODO if this board ever gets one,
+                                     see issue #46 */
 
 /* HELM_FEATURE_*: software capability toggles, deliberately reduced on
    this target. This is the resource-constrained board of the three (20KB

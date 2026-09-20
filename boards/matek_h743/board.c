@@ -675,6 +675,112 @@ bool board_i2c2_read_regs(uint8_t devAddr, uint8_t reg, uint8_t *buf, uint8_t le
     return HAL_I2C_Master_Receive(&baroI2c, (uint16_t)(devAddr << 1), buf, len, HAL_MAX_DELAY) == HAL_OK;
 }
 
+/* Battery voltage/current sense -- ADC1, PC0 (VBAT, ADC123_INP10) + PC1
+   (CURR, ADC123_INP11) per the STM32H743 datasheet's own pinout table.
+   See board.h's own comment on board_battery_adc_init() for the full
+   pin/clock provenance (issue #24). */
+
+static ADC_HandleTypeDef batteryAdc;
+
+void board_battery_adc_init(void) {
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_ADC12_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_0 | GPIO_PIN_1;
+    gpioInit.Mode = GPIO_MODE_ANALOG;
+    gpioInit.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOC, &gpioInit);
+
+    /* CLKP (per_ck) defaults to HSI (~64MHz nominal) at reset --
+       RCC_CLKPSOURCE_HSI is 0, CKPERSEL is never touched by
+       system_clock_config() (only HSE/PLL1 for sysclk, HSI48 for USB),
+       and HSI itself stays enabled through the HSE/PLL1 switch
+       (HAL_RCC_OscConfig there never disables it) -- so selecting
+       RCC_ADCCLKSOURCE_CLKP reaches a real, already-running clock with
+       no PLL2/PLL3 configuration needed. */
+    RCC_PeriphCLKInitTypeDef periphClkInit = {0};
+    periphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+    periphClkInit.AdcClockSelection = RCC_ADCCLKSOURCE_CLKP;
+    if (HAL_RCCEx_PeriphCLKConfig(&periphClkInit) != HAL_OK) {
+        Error_Handler();
+    }
+
+    batteryAdc.Instance = ADC1;
+    /* ASYNC_DIV16 against ~64MHz per_ck -> ~4MHz ADC kernel clock -- see
+       board.h's own comment on why this is deliberately conservative. */
+    batteryAdc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV16;
+    /* 12-bit, matching aoa-boat-controller's own analogReadResolution(12)
+       -- board_battery_adc_read_*_raw()'s callers (lib/sensors/battery.c)
+       reuse that project's already-bench-confirmed divider-scale math
+       (issue #24's own body), which assumes this same denominator. */
+    batteryAdc.Init.Resolution = ADC_RESOLUTION_12B;
+    batteryAdc.Init.ScanConvMode = ADC_SCAN_DISABLE;
+    batteryAdc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    batteryAdc.Init.LowPowerAutoWait = DISABLE;
+    batteryAdc.Init.ContinuousConvMode = DISABLE;
+    batteryAdc.Init.NbrOfConversion = 1;
+    batteryAdc.Init.DiscontinuousConvMode = DISABLE;
+    batteryAdc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    batteryAdc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    batteryAdc.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DR;
+    batteryAdc.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
+    batteryAdc.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
+    batteryAdc.Init.OversamplingMode = DISABLE;
+    if (HAL_ADC_Init(&batteryAdc) != HAL_OK) {
+        Error_Handler();
+    }
+
+    if (HAL_ADCEx_Calibration_Start(&batteryAdc, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+/* Blocking, polled single-conversion read -- battery voltage/current are
+   slow-changing (lib/sensors/battery.c's own task period), nowhere near
+   tight enough to need DMA/interrupt handling, same reasoning
+   board_imu_spi_init()'s own comment gives for its bus. A long sample
+   time (387.5 ADC clock cycles, the second-longest this chip offers) is
+   used deliberately -- no throughput pressure here, so there's no reason
+   not to let an unbuffered resistor-divider input settle generously.
+   The first conversion after a channel switch is discarded before the
+   real read -- carried over defensively from aoa-boat-controller's own
+   reference read (its own comment flags this as channel-switch/sample-
+   hold settling under STM32duino's analogRead(); unconfirmed whether
+   this raw-HAL path still needs it, but cheap enough to keep). */
+static uint16_t battery_adc_read_channel(uint32_t channel) {
+    ADC_ChannelConfTypeDef chanConfig = {0};
+    chanConfig.Channel = channel;
+    chanConfig.Rank = ADC_REGULAR_RANK_1;
+    chanConfig.SamplingTime = ADC_SAMPLETIME_387CYCLES_5;
+    chanConfig.SingleDiff = ADC_SINGLE_ENDED;
+    chanConfig.OffsetNumber = ADC_OFFSET_NONE;
+    chanConfig.Offset = 0;
+    if (HAL_ADC_ConfigChannel(&batteryAdc, &chanConfig) != HAL_OK) {
+        Error_Handler();
+    }
+
+    HAL_ADC_Start(&batteryAdc);
+    HAL_ADC_PollForConversion(&batteryAdc, HAL_MAX_DELAY);
+    (void)HAL_ADC_GetValue(&batteryAdc); /* discarded settling read, see above */
+    HAL_ADC_Stop(&batteryAdc);
+
+    HAL_ADC_Start(&batteryAdc);
+    HAL_ADC_PollForConversion(&batteryAdc, HAL_MAX_DELAY);
+    uint16_t const raw = (uint16_t)HAL_ADC_GetValue(&batteryAdc);
+    HAL_ADC_Stop(&batteryAdc);
+
+    return raw;
+}
+
+uint16_t board_battery_adc_read_vbat_raw(void) {
+    return battery_adc_read_channel(ADC_CHANNEL_10); /* PC0 */
+}
+
+uint16_t board_battery_adc_read_curr_raw(void) {
+    return battery_adc_read_channel(ADC_CHANNEL_11); /* PC1 */
+}
+
 void board_init(void) {
     system_clock_config();
     led_init();

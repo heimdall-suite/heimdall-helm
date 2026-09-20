@@ -39,6 +39,9 @@
 #if HELM_HAS_BARO
 #include "baro.h"
 #endif
+#if HELM_HAS_BATTERY_SENSE
+#include "battery.h"
+#endif
 
 extern void xPortSysTickHandler(void);
 
@@ -201,6 +204,13 @@ int main(void) {
     // module above (imu_start()'s own comment): onboard sensor presence
     // is a hardware fact (HELM_HAS_BARO), not a HELM_FEATURE_* toggle.
     baro_start();
+#endif
+
+#if HELM_HAS_BATTERY_SENSE
+    // Start the battery voltage/current sense module (issue #24) -- same
+    // shape as the baro module above, onboard PDB presence is a hardware
+    // fact (HELM_HAS_BATTERY_SENSE), not a HELM_FEATURE_* toggle.
+    battery_start();
 #endif
 
 #if HELM_FEATURE_CLI
