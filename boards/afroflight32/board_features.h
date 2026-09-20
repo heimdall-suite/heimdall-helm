@@ -40,8 +40,16 @@
    issue #17's one placeholder field. */
 #define HELM_FEATURE_TELEMETRY 1
 #define HELM_FEATURE_TELEMETRY_SPORT 1 /* core to this project's purpose, keep on every target */
-#define HELM_FEATURE_PARAMS_PERSIST 0  /* cut for now -- TODO: revisit once a persistence
-                                           backend is designed and its footprint is known */
+#define HELM_FEATURE_PARAMS_PERSIST 1  /* was 0 ("revisit once footprint is known") -- issue #32
+                                           built the generic store + this chip's own 1KB-page
+                                           backend (lib/params/stm32f1.c) and measured the real
+                                           cost: +400B RAM (12276->12676/20480, 59.9%->61.9%),
+                                           +2.8KB flash (24956->27764/131072, 19.0%->21.2%),
+                                           bench-confirmed surviving an actual reflash on this
+                                           exact board. Modest enough to keep on given this
+                                           board's own budget -- revisit again if a real param
+                                           (not just the one test value) meaningfully changes
+                                           that number. */
 
 /* CLI transport ported as of #12/#13: lib/usb_cdc/stm32f1.c, NOT native
    USB -- this board's "USB" port is an onboard USB-serial converter chip

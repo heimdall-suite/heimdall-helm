@@ -11,9 +11,14 @@
 #include "shell.h"
 #include "usb_cdc.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #if HELM_HAS_ROM_BOOTLOADER_JUMP
 #include "bootloader.h"
+#endif
+#if HELM_FEATURE_PARAMS_PERSIST
+#include "params.h"
 #endif
 
 #if defined(STM32H7)
@@ -58,6 +63,70 @@ static void cmd_dfu(const char *args) {
 }
 #endif
 
+#if HELM_FEATURE_PARAMS_PERSIST
+/* `param` command handler: list/show/set over the generic persisted-
+   param store (issue #32). A real operational command, not a bench-only
+   diagnostic (see .docs/cli.md's "Adding a command" section), so it
+   lives here directly rather than as a lib/diag subcommand. Only
+   PARAM_TYPE_U32 exists today (params.h) -- the %lu formatting/strtoul
+   parsing below is correct only for that type; a second ParamType would
+   need real per-type dispatch here, not just a wider printf. */
+static void param_print_value(ParamId id) {
+    uint32_t value = 0;
+    param_get_u32(id, &value); /* id always in range here -- every call site below already checked */
+    char line[80];
+    snprintf(line, sizeof(line), "%s = %lu\r\n", g_paramDefs[id].name, (unsigned long)value);
+    shell_print(line);
+}
+
+static void cmd_param(const char *args) {
+    if (strcmp(args, "list") == 0) {
+        for (uint16_t i = 0; i < PARAM_COUNT; i++) {
+            param_print_value((ParamId)i);
+        }
+        return;
+    }
+
+    /* shell_register()'s ShellCommandHandler hands us a const pointer
+       into the shell's own line buffer -- copy before tokenizing rather
+       than casting away const to mutate it in place. */
+    char buf[SHELL_MAX_LINE_LEN];
+    strncpy(buf, args, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char *verb = strtok(buf, " ");
+    char *name = strtok(NULL, " ");
+    char *valueStr = strtok(NULL, " ");
+
+    if (verb != NULL && strcmp(verb, "show") == 0 && name != NULL) {
+        int16_t const id = param_find_by_name(name);
+        if (id < 0) {
+            shell_print("no such param\r\n");
+            return;
+        }
+        param_print_value((ParamId)id);
+        return;
+    }
+
+    if (verb != NULL && strcmp(verb, "set") == 0 && name != NULL && valueStr != NULL) {
+        int16_t const id = param_find_by_name(name);
+        if (id < 0) {
+            shell_print("no such param\r\n");
+            return;
+        }
+        uint32_t const value = (uint32_t)strtoul(valueStr, NULL, 0);
+        if (!param_set_u32((ParamId)id, value)) {
+            shell_print("FAILED to persist -- flash write error, value NOT saved\r\n");
+            return;
+        }
+        param_print_value((ParamId)id);
+        return;
+    }
+
+    shell_print("usage: param list | param show <name> | param set <name> <value>\r\n");
+}
+#endif
+
 /* `diag` command handler: forwards to lib/diag's own dispatch --
    `pipeline`/`wedge` and any future bench-only diagnostic live there,
    not here, so this project's small set of real operational commands
@@ -95,6 +164,11 @@ static void cli_task(void *arg) {
                          cmd_diag)) {
         shell_print("WARNING: command table full, \"diag\" NOT registered\r\n");
     }
+#if HELM_FEATURE_PARAMS_PERSIST
+    if (!shell_register("param", "persisted params -- param list | show <name> | set <name> <value>", cmd_param)) {
+        shell_print("WARNING: command table full, \"param\" NOT registered\r\n");
+    }
+#endif
 
     shell_task(NULL);
 }

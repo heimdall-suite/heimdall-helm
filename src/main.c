@@ -27,6 +27,9 @@
 #if HELM_FEATURE_CLI
 #include "cli.h"
 #endif
+#if HELM_FEATURE_PARAMS_PERSIST
+#include "params.h"
+#endif
 #if HELM_FEATURE_TELEMETRY_SPORT && HELM_HAS_SPORT_UART
 #include "sport.h"
 #endif
@@ -140,6 +143,18 @@ int main(void) {
     // IWDG reset the MCU; board_init() is responsible for a safe power-on
     // state.
     supervisor_start();
+
+#if HELM_FEATURE_PARAMS_PERSIST
+    // Load the persisted-param store (issue #32) before anything that
+    // will eventually read from it -- currently just proves itself via
+    // the CLI's `param` command (no real consumer wired up yet); #10's
+    // rx_start() input-mode binding is the reason this call sits before
+    // the pipeline below, not just alphabetical convenience. Synchronous,
+    // not a task: reads a fixed-size flash region into a RAM cache once,
+    // same "direct call before the scheduler starts" shape as board_init()
+    // above, not a _start()-a-task module like the ones below it.
+    params_init();
+#endif
 
     // Start the Input->Mapping->Control->Output->Servo stub chain (issue
     // #7), each stage its own task/queue/supervisor-registered module
