@@ -29,10 +29,25 @@ static void control_task(void *arg) {
         MappingFrame in;
         mapping_get_latest(&in);
 
-        /* Passthrough stand-in -- see control.h. */
         ControlFrame out;
         memcpy(out.channels, in.channels, sizeof(out.channels));
         out.status = in.status;
+
+        if (in.pitchMode == PITCH_MODE_OFF) {
+            /* control-loops.md: "A loop in Off mode produces no output."
+               No failsafe-awareness needed here -- mapping.c already
+               forces PitchMode to Off during failsafe (control.h's own
+               comment). */
+            out.pitchActive = false;
+            out.pitchOutput = 0; /* meaningless while inactive; zeroed, not left garbage, before it goes out over the queue */
+        } else {
+            /* Placeholder body (issue #35) -- straight passthrough of
+               the mapped target, not real PID/attitude math (a later
+               issue, once control-loops.md's own rate/fusion questions
+               are resolved). */
+            out.pitchActive = true;
+            out.pitchOutput = in.pitchTarget;
+        }
 
         xQueueOverwrite(control_queue, &out);
         supervisor_kick(handle);

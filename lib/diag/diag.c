@@ -7,6 +7,7 @@
 #include "board_features.h"
 #include "rx.h"
 #include "mapping.h"
+#include "control.h"
 #include "servo.h"
 #include "shell.h"
 #include "telemetry.h"
@@ -35,11 +36,11 @@ static void diag_pipeline(void) {
 }
 
 /* `mapping`: dumps the mapping stage's own output (issue #34) -- the
-   final `pipeline` dump above can't show this, since control.c/output.c
-   still just copy MappingFrame's channels[] through unchanged (#35/#36
-   haven't landed), never touching pitchMode/pitchTarget at all. This is
-   the only bench-visible way to confirm CH2/CH4 are actually being
-   interpreted, until #35/#36 add real consumers. */
+   final `pipeline` dump above can't show this, since output.c still just
+   copies ControlFrame's channels[] through unchanged (#36 hasn't landed),
+   never touching pitchMode/pitchTarget at all. This is the only
+   bench-visible way to confirm mapping.c's chosen channels are actually
+   being interpreted, until #36 adds a real consumer. */
 static const char *pitch_mode_name(PitchMode mode) {
     switch (mode) {
         case PITCH_MODE_OFF:
@@ -60,6 +61,23 @@ static void diag_mapping(void) {
     snprintf(line, sizeof(line), "mapping: status=%s pitch_mode=%-6s pitch_target=%u\r\n",
              frame.status == RX_STATUS_OK ? "OK" : "FAILSAFE", pitch_mode_name(frame.pitchMode),
              frame.pitchTarget);
+    shell_print(line);
+}
+
+/* `control`: dumps the control stage's own output (issue #35) -- same
+   reasoning as diag_mapping() above: output.c still just copies
+   channels[] through unchanged (#36 hasn't landed), never touching
+   pitchActive/pitchOutput, so this is the only bench-visible way to
+   confirm the Off-mode/no-output and placeholder-passthrough branches
+   both actually run. */
+static void diag_control(void) {
+    ControlFrame frame;
+    control_get_latest(&frame);
+
+    char line[80];
+    snprintf(line, sizeof(line), "control: status=%s pitch_active=%s pitch_output=%u\r\n",
+             frame.status == RX_STATUS_OK ? "OK" : "FAILSAFE", frame.pitchActive ? "yes" : "no",
+             frame.pitchOutput);
     shell_print(line);
 }
 
@@ -237,6 +255,8 @@ void diag_dispatch(const char *args) {
         diag_pipeline();
     } else if (strcmp(args, "mapping") == 0) {
         diag_mapping();
+    } else if (strcmp(args, "control") == 0) {
+        diag_control();
     } else if (strcmp(args, "wedge") == 0) {
         diag_wedge();
     } else if (strcmp(args, "telemetry") == 0) {
@@ -254,7 +274,7 @@ void diag_dispatch(const char *args) {
         diag_baro();
 #endif
     } else {
-        shell_print("usage: diag <subcommand> -- available: pipeline, mapping, wedge, telemetry"
+        shell_print("usage: diag <subcommand> -- available: pipeline, mapping, control, wedge, telemetry"
 #if HELM_HAS_SPORT_UART
                     ", sport"
 #endif
