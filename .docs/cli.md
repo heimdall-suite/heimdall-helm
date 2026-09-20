@@ -104,7 +104,7 @@ Open either in any serial terminal once connected.
 | `diag sport` | Only on boards with `HELM_HAS_SPORT_UART` set (`matek_h743`) — poll-marker vs. poll-match counters (issue #18), for telling "receiver isn't polling" apart from "polling, ID never matches" apart from "genuinely working" |
 | `diag imu` | Only on boards with `HELM_HAS_IMU` set (`matek_h743`, `afroflight32`) — dumps the IMU sample queue's status + values, real chip reads as of #26/#27 |
 | `diag baro` | Only on boards with `HELM_HAS_BARO` set (`matek_h743`, `afroflight32`) — dumps the baro sample queue's status + pressure/temperature, real chip reads as of #23 |
-| `param list` / `param show <name>` / `param set <name> <value>` | Only on boards with `HELM_FEATURE_PARAMS_PERSIST` set (`matek_h743`, `afroflight32` — see `lib/params/`, issue #32) — generic get/set/enumerate over the persisted-param store. Currently just one throwaway test param (`test_counter`); real consumers (input/function mapping, servo endpoints, PID gains) are future work on top of this same interface |
+| `param list` / `param show <name>` / `param set <name> <value>` | Only on boards with `HELM_FEATURE_PARAMS_PERSIST` set (`matek_h743`, `afroflight32` — see `lib/params/`, issue #32) — generic get/set/enumerate over the persisted-param store. Two params so far: `test_counter` (throwaway proof, issue #32) and `input_mode` (real: `lib/rx/rx.c`'s runtime SBUS/CRSF pick, `0`/`1`, issue #10 — takes effect on next boot, `rx_start()` only reads it once at container-start). Remaining consumers (function mapping, servo endpoints, PID gains) are future work on top of this same interface |
 
 ## Adding a command
 

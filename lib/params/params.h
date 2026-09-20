@@ -31,6 +31,10 @@ typedef enum {
     PARAM_TEST_COUNTER = 0, /* throwaway, this issue's own proof -- remove once a
                                 real param exists and nothing still depends on this
                                 one for CLI/bench verification */
+    PARAM_INPUT_MODE,       /* issue #10 -- lib/rx/rx.c's runtime protocol pick,
+                                RX_INPUT_MODE_SBUS/_CRSF (rx.h). First real
+                                consumer of this store; test_counter above stays
+                                for now (see its own comment). */
     PARAM_COUNT,
 } ParamId;
 

@@ -46,12 +46,24 @@ typedef struct {
 const rx_driver_t *rx_sbus_driver(void);
 const rx_driver_t *rx_crsf_driver(void);
 
+/* Input-mode param encoding (issue #10) -- persisted as
+   lib/params/params.h's PARAM_INPUT_MODE when HELM_FEATURE_PARAMS_PERSIST
+   is on. Plain values, not an enum: params.h's ParamType only stores u32,
+   so this keeps rx_start()'s comparison and params.c's own per-board
+   default (derived from HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF below)
+   trivial on both sides. */
+#define RX_INPUT_MODE_SBUS 0U
+#define RX_INPUT_MODE_CRSF 1U
+
 /* Binds the active driver, calls its init(), and starts the RX task
    (issue #7's Input stage) that periodically calls rx_poll() and
-   publishes into RX's own length-1 supervised queue. Driver selection is
-   the persisted input-mode param once HELM_FEATURE_PARAMS_PERSIST lands
-   (#10); until then, the compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/
-   _CRSF default in board_features.h. */
+   publishes into RX's own length-1 supervised queue. Driver selection
+   (issue #10): the persisted PARAM_INPUT_MODE value when
+   HELM_FEATURE_PARAMS_PERSIST is on, else the compile-time
+   HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF default in board_features.h --
+   that default also seeds the param's own factory value (params.c), so a
+   freshly-flashed/never-written board still boots into the protocol its
+   wiring expects, not a hardcoded pick. */
 void rx_start(void);
 
 /* Polls the currently-bound driver and publishes its output into RX's

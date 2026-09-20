@@ -6,6 +6,24 @@
 #include "task.h"
 #include "supervisor.h"
 
+#if HELM_FEATURE_PARAMS_PERSIST
+#include "params.h"
+#endif
+
+/* Compile-time fallback (issue #6): also params.c's own factory default
+   for PARAM_INPUT_MODE (issue #10), so both paths agree on what a board
+   without a persisted override -- or without params-persist at all --
+   boots into. */
+#if HELM_RX_DEFAULT_PROTOCOL_SBUS && HELM_RX_DEFAULT_PROTOCOL_CRSF
+#error "board_features.h must set exactly one of HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF"
+#elif HELM_RX_DEFAULT_PROTOCOL_CRSF
+#define RX_DEFAULT_INPUT_MODE RX_INPUT_MODE_CRSF
+#elif HELM_RX_DEFAULT_PROTOCOL_SBUS
+#define RX_DEFAULT_INPUT_MODE RX_INPUT_MODE_SBUS
+#else
+#error "board_features.h must set exactly one of HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF"
+#endif
+
 /* Module-level glue, not per-protocol -- binds whichever driver is
    active and forwards to it. See .docs/architecture/module-architecture.md's
    RX case study: which driver is active is a runtime pick, not a build-
@@ -50,12 +68,21 @@ static void rx_task(void *arg) {
 }
 
 void rx_start(void) {
-#if HELM_RX_DEFAULT_PROTOCOL_CRSF
-    active_driver = rx_crsf_driver();
-#elif HELM_RX_DEFAULT_PROTOCOL_SBUS
-    active_driver = rx_sbus_driver();
+#if HELM_FEATURE_PARAMS_PERSIST
+    /* Runtime pick (issue #10): the persisted input-mode param, read
+       once at container-start time -- not re-checked per poll, same
+       "bind once, forward every tick" shape this module already had.
+       param_get_u32() only fails on an out-of-range id, which
+       PARAM_INPUT_MODE never is, so mode's RX_DEFAULT_INPUT_MODE
+       initializer is unreachable in practice, not a real fallback path;
+       it's there so a future misuse of this pattern fails safe instead
+       of reading uninitialized stack. */
+    uint32_t mode = RX_DEFAULT_INPUT_MODE;
+    param_get_u32(PARAM_INPUT_MODE, &mode);
+    active_driver = (mode == RX_INPUT_MODE_CRSF) ? rx_crsf_driver() : rx_sbus_driver();
 #else
-#error "board_features.h must set exactly one of HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF"
+    active_driver =
+        (RX_DEFAULT_INPUT_MODE == RX_INPUT_MODE_CRSF) ? rx_crsf_driver() : rx_sbus_driver();
 #endif
 
     active_driver->init();

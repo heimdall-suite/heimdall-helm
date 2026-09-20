@@ -146,13 +146,13 @@ int main(void) {
 
 #if HELM_FEATURE_PARAMS_PERSIST
     // Load the persisted-param store (issue #32) before anything that
-    // will eventually read from it -- currently just proves itself via
-    // the CLI's `param` command (no real consumer wired up yet); #10's
-    // rx_start() input-mode binding is the reason this call sits before
-    // the pipeline below, not just alphabetical convenience. Synchronous,
-    // not a task: reads a fixed-size flash region into a RAM cache once,
-    // same "direct call before the scheduler starts" shape as board_init()
-    // above, not a _start()-a-task module like the ones below it.
+    // reads from it -- rx_start() below is the reason this call sits
+    // before the pipeline, not just alphabetical convenience: #10's
+    // input-mode param has to be in the RAM cache before rx_start()
+    // binds a driver from it. Synchronous, not a task: reads a
+    // fixed-size flash region into a RAM cache once, same "direct call
+    // before the scheduler starts" shape as board_init() above, not a
+    // _start()-a-task module like the ones below it.
     params_init();
 #endif
 
@@ -163,10 +163,12 @@ int main(void) {
     // module's queue is created and seeded here, before
     // vTaskStartScheduler(), so no consumer can run before a producer's
     // queue holds a valid value regardless of _start() call order).
-    // rx_start()'s driver pick is board_features.h's compile-time
-    // HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF default (issue #6); every stage
-    // past it is a fixed passthrough stand-in, no real mapping table or
-    // control-loop math yet -- see each module's own header. This
+    // rx_start()'s driver pick reads the persisted input-mode param when
+    // HELM_FEATURE_PARAMS_PERSIST is on, else board_features.h's
+    // compile-time HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF default (issue
+    // #6, runtime pick added by #10); every stage past it is a fixed
+    // passthrough stand-in, no real mapping table or control-loop math
+    // yet -- see each module's own header. This
     // #include chain is also what pulls lib/rx/ (and these new libs) into
     // the build via the LDF's normal chain scan -- see platformio.ini's
     // header comment for why lib/rx/, unlike lib/bootloader/ and

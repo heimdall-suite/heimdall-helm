@@ -112,10 +112,10 @@ to `nexus_xr` (STM32F7, still blocked on its hardware `#error`) —
 
 ## Case study: Input (RX), dual-protocol selection
 
-Input needs to support both SBUS and CRSF, eventually runtime-selectable
-via a persisted parameter (parameter persistence itself isn't designed
-yet — `HELM_FEATURE_PARAMS_PERSIST` is currently off/TODO on every
-board). This is a different selection problem than
+Input needs to support both SBUS and CRSF, runtime-selectable via a
+persisted parameter (`HELM_FEATURE_PARAMS_PERSIST`, on for both real
+boards as of #32; the persisted pick itself is #10's `PARAM_INPUT_MODE`,
+`lib/params/params.c`). This is a different selection problem than
 [lib/README.md](../../lib/README.md)'s existing chip-selection template,
 worth calling out explicitly:
 
@@ -133,8 +133,10 @@ worth calling out explicitly:
   params-persist is available, else a compile-time default
   (`HELM_RX_DEFAULT_PROTOCOL_SBUS` / `_CRSF` in `board_features.h`) — the
   fallback path *is* the "build flag to begin with," and it stays in
-  place as the no-params-yet default once persistence lands rather than
-  being thrown away.
+  place as the no-params-yet default (a board with
+  `HELM_FEATURE_PARAMS_PERSIST` off) and as that same param's own
+  factory-default value (`lib/params/params.c`) rather than being thrown
+  away now that #10 has landed.
 
 `lib/rx/shared/rx_timeout.c` (the receive-timeout backstop
 [receiver-to-servo.md](receiver-to-servo.md) already designs) stays

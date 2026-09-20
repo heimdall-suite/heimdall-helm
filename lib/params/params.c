@@ -1,15 +1,31 @@
 #include "params.h"
 #include "params_backend.h"
 
+#include "board_features.h"
+
 #include <stddef.h>
 #include <string.h>
 
 /* Registry -- one entry per ParamId (params.h). Positional: index i here
    is PARAM_id's stored value at values[i] in ParamsRecord below, so
    entries must only ever be appended, never reordered (see params.h's
-   own comment on PARAM_TEST_COUNTER). */
+   own comment on PARAM_TEST_COUNTER).
+
+   input_mode's default is deliberately this board's own compile-time
+   HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF (board_features.h), not a bare 0 --
+   a never-written/freshly-erased record (params_init()'s "invalid,
+   fall back to defaults" path) must still boot into the protocol this
+   board's receiver is actually wired for (issue #10), not silently
+   default to SBUS on a board wired for CRSF. Raw 0U/1U here, NOT
+   lib/rx/rx.h's RX_INPUT_MODE_SBUS/_CRSF -- this file is built via
+   add_params.py's own explicit BuildSources() call (see that script's
+   comment), which never runs PlatformIO's LDF chain-scan over it, so it
+   has no include path to lib/rx/ at all. Values must stay in sync with
+   rx.h's own by hand; a board's HELM_RX_DEFAULT_PROTOCOL_* pick already
+   works the same duplicated-by-hand way across board_features.h files. */
 ParamDef const g_paramDefs[PARAM_COUNT] = {
     {"test_counter", PARAM_TYPE_U32, 0},
+    {"input_mode", PARAM_TYPE_U32, HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U},
 };
 
 /* magic+version+CRC-validated record, same convention as
@@ -21,7 +37,18 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    than misread -- same convention that codebase's UserPinConfig::kVersion
    comment documents. */
 #define PARAMS_MAGIC 0xA5U
-#define PARAMS_VERSION 1U
+/* Bumped 1->2 for issue #10: adding PARAM_INPUT_MODE grew values[] from
+   1 to 2 u32s, which is exactly the "field added" shape change this
+   file's own convention (below) requires a version bump for -- a stale
+   1-value record read into the new 2-value struct would have its second
+   value silently reinterpreted from the old record's crc byte (plus its
+   own zeroed trailing pad) instead of falling back to input_mode's real
+   default. Caught bench-side on afroflight32 (issue #32's own leftover
+   persisted record from that issue's testing, still on that board's
+   flash page since reflashing app code never touches this reserved
+   region): input_mode read back as 233 -- a real, non-default byte
+   value, not a benign misread -- before this bump was added. */
+#define PARAMS_VERSION 2U
 
 typedef struct {
     uint8_t magic;
