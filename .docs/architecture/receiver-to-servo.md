@@ -24,9 +24,9 @@ flowchart LR
         end
     end
 
-    MAP["Function/input mapping<br/>(failsafe substitution happens here)"]
+    MAP["Function/input mapping<br/>(mode/target failsafe<br/>substitution happens here)"]
     CTRL["Control loops<br/>Pitch and/or Roll"]
-    OUT["Output mapping"]
+    OUT["Output mapping<br/>(passthrough failsafe<br/>substitution happens here)"]
     SERVO["Servo driver"]
     SENS["Sensors<br/>onboard: IMU, baro<br/>peripheral: compass, ..."]
     LOG["Blackbox / logging"]
@@ -76,29 +76,39 @@ protocol's framing.
 
 ## Failsafe
 
-Substitution happens **at the input mapping stage**, nowhere else:
+Split across two stages by what each one actually knows, not handled in
+one place the way an earlier version of this doc described:
 
 - **Not in the RX driver** (`sbus.c`/`crsf.c`) — a protocol driver
   shouldn't know that CH2 means "Pitch mode." It only reports channels +
   an honest signal status.
-- **Not in the servo driver** — it stays dumb, "doesn't know or care"
-  whether a value came from passthrough or a control loop (see below). It
-  has no basis to pick a safe value per physical servo, and doing it there
-  wouldn't stop a control loop from meanwhile chasing a stale target.
-- **At the mapping stage**, because that's the only place that knows both
-  the RX signal status *and* what each channel semantically means. Each
-  mapped function carries its own failsafe value: a mode function forces
-  to a safe mode (most likely `Off`), a target function forces to a safe
-  setpoint, a passthrough channel forces to a configured safe position
-  (hold-last vs. a fixed preset — not decided yet).
+- **Mode/target functions: substituted at the input mapping stage**,
+  because that's the only place that knows both the RX signal status
+  *and* what a mapped channel semantically means. A mode function forces
+  to a safe mode (most likely `Off`); a target function forces to a safe
+  setpoint. A mode forced to `Off` during failsafe produces no output
+  using the exact same "Off produces no output" behavior that already
+  exists for a pilot deliberately selecting `Off` — control loops don't
+  need any failsafe-awareness of their own for this path.
+- **Passthrough channels: substituted at the output mapping stage
+  instead**, per physical servo slot, each independently configured to
+  either hold its last known value or snap to a fixed configured preset.
+  Deliberate departure from "the mapping stage is the only place that
+  knows enough": a passthrough channel carries no semantic meaning for
+  input mapping to substitute *against* in the first place, and input
+  mapping doesn't even know which physical slot(s) a passthrough channel
+  will eventually land on (`lib/output/`'s own table decides that) — so
+  "what's safe here" is a property of the physical actuator output
+  mapping already owns the assignment for, not of the raw input channel.
+  This does mean output mapping (and, for a control-loop-fed slot, that
+  loop's own output) needs failsafe-awareness after all, unlike the
+  "nothing downstream needs it" framing this section used to have for
+  every path uniformly.
 
-Because substitution happens exactly once, before anything fans out,
-**nothing downstream needs failsafe-awareness at all** — control loops,
-output mapping, and the servo driver just run their completely normal
-logic against whatever the mapping stage now presents. A mode forced to
-`Off` during failsafe produces no output using the exact same "Off
-produces no output" behavior that already exists for a pilot deliberately
-selecting `Off`.
+The **servo driver** stays failsafe-unaware either way — it doesn't know
+or care whether a value came from passthrough or a control loop, and by
+the time output mapping hands it a value, that value is already the
+final, failsafe-substituted-if-needed one.
 
 **Control-relevant status is only two tiers, `OK` vs. `FAILSAFE`** — a
 brief frame-loss gap doesn't need its own behavioral branch, because
@@ -145,15 +155,20 @@ goes back to passing real values through immediately — no separate
 built.
 
 **Not yet decided**: the actual failsafe *values* — what mode is safe per
-axis, what a passthrough channel's safe position should be, and whether
-hold-last or a fixed preset is right for passthrough. That's a real
-per-function, per-boat decision, not an architecture question — flagged
-here as open rather than guessed at.
+axis, what a passthrough channel's per-slot preset value should be. Hold-
+last vs. fixed preset is no longer an either/or architecture question
+(above: both exist, configured per physical slot), but which one a given
+slot should actually use, and what the preset value is, is still a real
+per-function, per-boat decision — flagged here as open rather than
+guessed at.
 
 ## Output mapping
 
 Maps named signals — passthrough channels or a control loop's output — to
 physical servo slots. Configurable the same way the input mapping is.
+Also where passthrough failsafe substitution happens (see "Failsafe"
+above) — each physical slot fed by a passthrough channel carries its own
+hold-last-vs-fixed-preset config, independent of every other slot.
 
 Example table:
 

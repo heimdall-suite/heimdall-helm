@@ -6,6 +6,7 @@
 #include "task.h"
 #include "board_features.h"
 #include "rx.h"
+#include "mapping.h"
 #include "servo.h"
 #include "shell.h"
 #include "telemetry.h"
@@ -30,6 +31,35 @@ static void diag_pipeline(void) {
         n += snprintf(line + n, sizeof(line) - n, "%s%u", i == 0 ? "" : " ", frame.servos[i]);
     }
     snprintf(line + n, sizeof(line) - n, "]\r\n");
+    shell_print(line);
+}
+
+/* `mapping`: dumps the mapping stage's own output (issue #34) -- the
+   final `pipeline` dump above can't show this, since control.c/output.c
+   still just copy MappingFrame's channels[] through unchanged (#35/#36
+   haven't landed), never touching pitchMode/pitchTarget at all. This is
+   the only bench-visible way to confirm CH2/CH4 are actually being
+   interpreted, until #35/#36 add real consumers. */
+static const char *pitch_mode_name(PitchMode mode) {
+    switch (mode) {
+        case PITCH_MODE_OFF:
+            return "OFF";
+        case PITCH_MODE_LIMIT:
+            return "LIMIT";
+        case PITCH_MODE_ACTIVE:
+            return "ACTIVE";
+    }
+    return "?";
+}
+
+static void diag_mapping(void) {
+    MappingFrame frame;
+    mapping_get_latest(&frame);
+
+    char line[80];
+    snprintf(line, sizeof(line), "mapping: status=%s pitch_mode=%-6s pitch_target=%u\r\n",
+             frame.status == RX_STATUS_OK ? "OK" : "FAILSAFE", pitch_mode_name(frame.pitchMode),
+             frame.pitchTarget);
     shell_print(line);
 }
 
@@ -205,6 +235,8 @@ static void diag_baro(void) {
 void diag_dispatch(const char *args) {
     if (strcmp(args, "pipeline") == 0) {
         diag_pipeline();
+    } else if (strcmp(args, "mapping") == 0) {
+        diag_mapping();
     } else if (strcmp(args, "wedge") == 0) {
         diag_wedge();
     } else if (strcmp(args, "telemetry") == 0) {
@@ -222,7 +254,7 @@ void diag_dispatch(const char *args) {
         diag_baro();
 #endif
     } else {
-        shell_print("usage: diag <subcommand> -- available: pipeline, wedge, telemetry"
+        shell_print("usage: diag <subcommand> -- available: pipeline, mapping, wedge, telemetry"
 #if HELM_HAS_SPORT_UART
                     ", sport"
 #endif

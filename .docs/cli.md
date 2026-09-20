@@ -99,6 +99,7 @@ Open either in any serial terminal once connected.
 | `status` | Prints the board name and uptime |
 | `dfu` | Only on boards with `HELM_HAS_ROM_BOOTLOADER_JUMP` set (`matek_h743`, `afroflight32`) — reboots into the chip's ROM bootloader (USB DFU on matek_h743, plain UART/AN3155 on afroflight32), ready for `pio run -t upload` with no manual BOOT0-strap needed |
 | `diag pipeline` | Shows the RX→Mapping→Control→Output→Servo chain's final stage output (status + channel values) |
+| `diag mapping` | Dumps the mapping stage's own output directly (issue #34) — status, `pitch_mode` (`OFF`/`LIMIT`/`ACTIVE`, from CH2), `pitch_target` (raw, from CH4). Not visible via `diag pipeline` yet: control.c/output.c still just copy `channels[]` through unchanged until #35/#36 land, so this is the only way to confirm CH2/CH4 are actually being interpreted |
 | `diag wedge` | Bench-only: spins a task above the supervisor's priority to prove IWDG actually resets the board (#5) — the board reboots ~250ms after running this |
 | `diag telemetry` | Dumps the telemetry table's current state (issue #16) — every field, value/status/age, even before any protocol adapter (#18/#19) exists |
 | `diag sport` | Only on boards with `HELM_HAS_SPORT_UART` set (`matek_h743`) — poll-marker vs. poll-match counters (issue #18), for telling "receiver isn't polling" apart from "polling, ID never matches" apart from "genuinely working" |
