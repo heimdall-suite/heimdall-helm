@@ -10,7 +10,8 @@ Import("env")
 # HELM_HAS_BATTERY_SENSE (same whole-file-guard idiom lib/telemetry/
 # sport.c uses for HELM_HAS_SPORT_UART), compiled unconditionally here
 # alongside imu.c/baro.c below rather than needing its own
-# custom_helm_battery selection.
+# custom_helm_battery selection. gps.c (issue #40) is the same shape,
+# self-guarded on HELM_HAS_GPS instead.
 # Same explicit-source-selection reasoning as add_bootloader.py/
 # add_usb_cdc.py, since lib/sensors/ has more than one file implementing
 # each of imu_chip.h's/baro_chip.h's same function names. lib_ignore =
@@ -59,5 +60,6 @@ env.BuildSources(
         "+<baro.c>",
         "+<" + baro_chip + ".c>",
         "+<battery.c>",
+        "+<gps.c>",
     ],
 )

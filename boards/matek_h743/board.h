@@ -228,4 +228,32 @@ void board_battery_adc_init(void);
 uint16_t board_battery_adc_read_vbat_raw(void);
 uint16_t board_battery_adc_read_curr_raw(void);
 
+/* GPS UART -- USART3, PD9 ("RX" on this board's free header), NMEA
+   input at its standard 115200 8N1 (issue #40). RX only, same "receiver
+   only ever transmits to the FC" reasoning board_sbus_uart_init() uses
+   for its own TX pin -- PD8 (USART3_TX) is left unconfigured. Confirmed
+   free against every UART/bus this board's board.c already claims
+   (USART6 SBUS/PC7, UART7 S.Port/PE8, SPI1 IMU, I2C2 baro) -- none touch
+   PD8/PD9.
+
+   Plain RXNE ISR into a ring buffer, same lightweight register-level
+   pattern board_sport_uart_*() already established for UART7 -- no DMA
+   needed at NMEA's realistic sentence rate (a few Hz), unlike SBUS's
+   tight continuous 100000 baud stream.
+
+   This module is a genuine hot-pluggable peripheral, not an onboard
+   sensor -- the GPS module needs external power the user connects on
+   demand (to avoid draining the boat's main battery), so it can be
+   absent at boot or connected mid-session. board_gps_uart_init() itself
+   doesn't care either way (same "init unconditionally, non-blocking
+   drain" shape aoa-boat-controller's own GpsReader uses) -- absence
+   just means board_gps_uart_available() never returns true, and
+   lib/sensors/gps.c's own "last updated" staleness tracking (same
+   never-fabricate-a-value convention baro.h/sport.c already use) never
+   advances. See board_gps_uart_init()'s own comment in board.c for the
+   fuller provenance. */
+void board_gps_uart_init(void);
+bool board_gps_uart_available(void);
+uint8_t board_gps_uart_read_byte(void);
+
 #endif /* HELM_BOARD_MATEK_H743_H */

@@ -1,0 +1,236 @@
+#include "gps.h"
+
+#include "board_features.h"
+
+/* Whole-file guard, same idiom lib/telemetry/sport.c uses for
+   HELM_HAS_SPORT_UART -- compiles to an empty translation unit on any
+   board without a ported board_gps_uart_*() transport (board.h). */
+#if HELM_HAS_GPS
+
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+#include "supervisor.h"
+#include "board.h"
+
+#define GPS_TASK_PERIOD_MS 100 /* faster than baro.c's 1000ms -- needs to drain
+                                   board.h's ring buffer often enough that it
+                                   never overflows at 115200 baud's realistic
+                                   NMEA sentence rate (a GGA+RMC pair well under
+                                   its 128-byte size), not because a fix itself
+                                   updates this fast */
+#define GPS_TASK_PRIORITY 1
+
+/* NMEA sentences are <=82 chars per spec (NMEA 0183 4.10) -- some margin
+   for modules that exceed it slightly. */
+#define GPS_LINE_MAX_LEN 96
+#define GPS_MAX_FIELDS 20
+
+static QueueHandle_t gps_queue;
+static GpsFix latestFix;
+
+static char lineBuf[GPS_LINE_MAX_LEN];
+static uint8_t lineLen;
+
+/* Parses NMEA's ddmm.mmmm (lat) / dddmm.mmmm (lon) format + N/S/E/W
+   direction into signed decimal degrees. Integer truncation instead of
+   floor() -- raw is always >= 0 here (NMEA encodes sign as a separate
+   direction letter, never a leading '-'), so truncation toward zero is
+   already floor() for this input, and this avoids pulling in <math.h>/
+   libm for one call site. */
+static float nmea_to_decimal_degrees(const char *field, char dir) {
+    double const raw = strtod(field, NULL);
+    double const degreesWhole = (double)(long)(raw / 100.0);
+    double const minutes = raw - degreesWhole * 100.0;
+    double decimal = degreesWhole + minutes / 60.0;
+    if (dir == 'S' || dir == 'W') {
+        decimal = -decimal;
+    }
+    return (float)decimal;
+}
+
+/* Additive XOR checksum between '$' and '*', matching every other
+   checksum in this codebase's own "validate before trusting a frame"
+   discipline (lib/telemetry/sport.c's own FrSky checksum, a different
+   algorithm but the same principle). Corrupted/torn lines are dropped
+   here, never partially parsed. */
+static bool nmea_checksum_valid(const char *sentence) {
+    const char *p = sentence + 1; /* skip leading '$' */
+    uint8_t checksum = 0;
+    while (*p != '\0' && *p != '*') {
+        checksum ^= (uint8_t)*p;
+        p++;
+    }
+    if (*p != '*') {
+        return false; /* no checksum present -- torn line */
+    }
+    p++;
+    uint8_t const expected = (uint8_t)strtoul(p, NULL, 16);
+    return checksum == expected;
+}
+
+/* Splits `sentence` in place on ',' and '*' (NUL-stuffing each
+   delimiter), same shape a hand-rolled CSV splitter needs -- NOT
+   strtok(), which silently merges adjacent delimiters and would
+   misalign every field after a NMEA sentence's very common empty field
+   (",,", a sensor with nothing to report for that slot). Returns the
+   number of fields found, capped at maxFields. */
+static uint8_t split_fields(char *sentence, char *fields[], uint8_t maxFields) {
+    uint8_t count = 0;
+    char *p = sentence;
+    fields[count++] = p;
+    while (*p != '\0' && count < maxFields) {
+        if (*p == ',' || *p == '*') {
+            *p = '\0';
+            fields[count++] = p + 1;
+        }
+        p++;
+    }
+    return count;
+}
+
+/* GGA: 0=$xxGGA,1=time,2=lat,3=N/S,4=lon,5=E/W,6=fixQuality,
+   7=numSatellites,8=HDOP,9=altitude,10=altitude-units,... -- the
+   authoritative source for latestFix.status: fixQuality 0 (or an empty
+   lat/lon field -- a module can emit GGA before it has resolved a
+   position at all) means FAILED, never a stale/zeroed OK. */
+static void parse_gga(char *fields[]) {
+    uint32_t const fixQuality = strtoul(fields[6], NULL, 10);
+    if (fixQuality == 0 || fields[2][0] == '\0' || fields[4][0] == '\0') {
+        latestFix.status = SENSOR_STATUS_FAILED;
+        return;
+    }
+
+    latestFix.latitude_deg = nmea_to_decimal_degrees(fields[2], fields[3][0]);
+    latestFix.longitude_deg = nmea_to_decimal_degrees(fields[4], fields[5][0]);
+    latestFix.satellites = (uint8_t)strtoul(fields[7], NULL, 10);
+    latestFix.altitude_m = (float)strtod(fields[9], NULL);
+    latestFix.status = SENSOR_STATUS_OK;
+}
+
+/* RMC: 0=$xxRMC,1=time,2=status(A=valid/V=void),3=lat,4=N/S,5=lon,
+   6=E/W,7=speed(knots),8=course,9=date,... -- only ever contributes
+   speed_mps on top of whatever GGA already established; it does NOT set
+   latestFix.status itself (issue #40's own scoping: GGA owns fix
+   quality/position, RMC owns speed/course/fix-validity, and this driver
+   treats GGA as the authoritative one for "is there a fix at all" since
+   it's the sentence that actually carries position). A void ('V') RMC
+   just leaves speed_mps untouched from whatever it last validly was. */
+static void parse_rmc(char *fields[]) {
+    if (fields[2][0] != 'A') {
+        return;
+    }
+    double const speedKnots = strtod(fields[7], NULL);
+    latestFix.speed_mps = (float)(speedKnots * 0.514444); /* 1 knot = 0.514444 m/s */
+}
+
+static void gps_process_sentence(char *sentence) {
+    if (!nmea_checksum_valid(sentence)) {
+        return;
+    }
+
+    char *fields[GPS_MAX_FIELDS];
+    uint8_t const fieldCount = split_fields(sentence, fields, GPS_MAX_FIELDS);
+
+    /* fields[0] is "$GPGGA"/"$GNGGA"/"$GLGGA"/etc -- match the last 3
+       characters (the sentence type) regardless of talker ID, since
+       that varies by module/constellation and isn't this driver's
+       concern (same defensive convention most NMEA parsers use). */
+    size_t const idLen = strlen(fields[0]);
+    if (idLen < 3) {
+        return;
+    }
+    char const *type = fields[0] + idLen - 3;
+
+    if (strcmp(type, "GGA") == 0 && fieldCount >= 10) {
+        parse_gga(fields);
+    } else if (strcmp(type, "RMC") == 0 && fieldCount >= 9) {
+        parse_rmc(fields);
+    }
+    /* Every other sentence type: checksum-verified above, but discarded
+       here -- same "GGA/RMC only, every other sentence just proves the
+       line parsed cleanly" scope aoa-boat-controller's own GpsReader
+       uses (issue #40's own body). */
+}
+
+/* Accumulates one byte into lineBuf, dispatching a complete sentence to
+   gps_process_sentence() on a line terminator. '$' always resets to a
+   fresh line (a NMEA module never nests sentences), so this recovers
+   automatically from a byte dropped by board.h's ring buffer (issue
+   #40's own board.c comment on that being possible under a full buffer)
+   or from having been powered on mid-sentence -- no separate resync
+   state machine needed, same self-resynchronizing reasoning
+   board_sbus_uart_take_frame()'s own header comment gives for SBUS's
+   idle-line capture. */
+static void gps_process_byte(uint8_t b) {
+    if (b == '$') {
+        lineLen = 0;
+        lineBuf[lineLen++] = (char)b;
+        return;
+    }
+
+    if (lineLen == 0) {
+        return; /* mid-stream, before the first '$' this boot (or after a drop) */
+    }
+
+    if (b == '\r' || b == '\n') {
+        lineBuf[lineLen] = '\0';
+        gps_process_sentence(lineBuf);
+        lineLen = 0;
+        return;
+    }
+
+    if (lineLen < GPS_LINE_MAX_LEN - 1) {
+        lineBuf[lineLen++] = (char)b;
+    } else {
+        /* Overlong line -- drop it, resync on the next '$' rather than
+           parsing a truncated/misaligned sentence. */
+        lineLen = 0;
+    }
+}
+
+static void gps_task(void *arg) {
+    (void)arg;
+
+    GpsFix fallback = {0};
+    fallback.status = SENSOR_STATUS_FAILED;
+    SupervisorHandle handle = supervisor_register("gps", gps_queue, &fallback, sizeof(fallback),
+                                                    pdMS_TO_TICKS(GPS_TASK_PERIOD_MS * 3));
+
+    board_gps_uart_init();
+
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(GPS_TASK_PERIOD_MS));
+
+        while (board_gps_uart_available()) {
+            gps_process_byte(board_gps_uart_read_byte());
+        }
+
+        xQueueOverwrite(gps_queue, &latestFix);
+        supervisor_kick(handle);
+    }
+}
+
+void gps_start(void) {
+    gps_queue = xQueueCreate(1, sizeof(GpsFix));
+
+    latestFix.status = SENSOR_STATUS_FAILED;
+    xQueueOverwrite(gps_queue, &latestFix);
+
+    /* configMINIMAL_STACK_SIZE * 4, not the bare minimum -- this task's
+       NMEA parsing chain (gps_process_sentence -> parse_gga/parse_rmc ->
+       strtod) is real string/float parsing, same order of stack demand
+       as cli.c's own shell task (its own xTaskCreate call uses the same
+       *4 multiplier for the same reason: strtoul() and friends need more
+       than the heartbeat task's bare-minimum stack). */
+    xTaskCreate(gps_task, "gps", configMINIMAL_STACK_SIZE * 4, NULL, GPS_TASK_PRIORITY, NULL);
+}
+
+void gps_get_latest(GpsFix *out) {
+    xQueuePeek(gps_queue, out, 0);
+}
+
+#endif /* HELM_HAS_GPS */

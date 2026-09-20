@@ -9,7 +9,19 @@
 #define HELM_HAS_IMU 1   /* ICM42688P, SPI -- confirmed */
 #define HELM_HAS_BARO 1  /* DPS310, I2C -- confirmed present in code, verify wiring */
 #define HELM_HAS_MAG 0   /* not wired, confirmed absent as of last check */
-#define HELM_HAS_GPS 0   /* not wired, confirmed absent as of last check */
+#define HELM_HAS_GPS 1   /* wired (USART3/PD9, issue #40) but a genuine
+                             hot-pluggable peripheral, not an always-on
+                             onboard sensor -- the module needs external
+                             power the user connects on demand, to avoid
+                             draining the boat's main battery, so it can
+                             be absent at boot or connected mid-session.
+                             HELM_HAS_GPS tracks the wiring fact (is a
+                             UART actually routed to it), not whether a
+                             module happens to be powered right now --
+                             see board_gps_uart_init()'s own comment in
+                             board.h/board.c for the hot-plug design that
+                             makes that distinction safe to compile in
+                             unconditionally. */
 #define HELM_HAS_BLACKBOX_STORAGE 0 /* no SD/flash wired for logging on this unit -- TODO */
 #define HELM_HAS_BATTERY_SENSE 1 /* onboard PDB (power distribution board), ADC1
                                      PC0 (VBAT) + PC1 (CURR) -- confirmed against
