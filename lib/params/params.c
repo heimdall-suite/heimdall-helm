@@ -34,6 +34,63 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
        not servo.h's SERVO_RATE_50HZ, for the same reason input_mode uses
        raw 0U/1U above -- no include path to lib/servo/ from this file. */
     {"servo_rate", PARAM_TYPE_U32, 0U},
+
+    /* Issue #39 -- output.c's per-slot endpoint/subtrim/reverse
+       calibration, HELM_PARAMS_MAX_OUTPUT_SLOTS (params.h) slots' worth
+       regardless of board (see that file's own comment on why this
+       isn't sized per-board). Defaults reproduce output.c's own
+       pre-#39 hardcoded slotConfigs[] table exactly -- both real boards'
+       tables agree on these same numbers for every slot (S3/OUT1 gets
+       the asymmetric reversed 1000/1550/2000 subtrim, every other slot
+       gets the plain symmetric 1000/1500/2000) -- so a first boot after
+       #39 lands behaves identically to before it, no behavior change
+       until someone actually calls `param set`. Raw 1000/1500/1550/2000
+       here, not output.c's own OUTPUT_SERVO_MIN_US/_CENTER_US/_MAX_US --
+       this file has no include path to output.c's private #defines
+       (same "duplicated by hand, kept in sync manually" convention this
+       file's own input_mode comment already documents for
+       HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF).
+       Names are out<N>.min/center/max/reversed, N = output.c's own
+       slotConfigs[] array index (0-based, NOT the physical silkscreen
+       label -- see param_output_slot_id()'s own comment in params.h). */
+    {"out0.min", PARAM_TYPE_U32, 1000U},
+    {"out0.center", PARAM_TYPE_U32, 1550U},
+    {"out0.max", PARAM_TYPE_U32, 2000U},
+    {"out0.reversed", PARAM_TYPE_U32, 1U},
+    {"out1.min", PARAM_TYPE_U32, 1000U},
+    {"out1.center", PARAM_TYPE_U32, 1500U},
+    {"out1.max", PARAM_TYPE_U32, 2000U},
+    {"out1.reversed", PARAM_TYPE_U32, 0U},
+    {"out2.min", PARAM_TYPE_U32, 1000U},
+    {"out2.center", PARAM_TYPE_U32, 1500U},
+    {"out2.max", PARAM_TYPE_U32, 2000U},
+    {"out2.reversed", PARAM_TYPE_U32, 0U},
+    {"out3.min", PARAM_TYPE_U32, 1000U},
+    {"out3.center", PARAM_TYPE_U32, 1500U},
+    {"out3.max", PARAM_TYPE_U32, 2000U},
+    {"out3.reversed", PARAM_TYPE_U32, 0U},
+    {"out4.min", PARAM_TYPE_U32, 1000U},
+    {"out4.center", PARAM_TYPE_U32, 1500U},
+    {"out4.max", PARAM_TYPE_U32, 2000U},
+    {"out4.reversed", PARAM_TYPE_U32, 0U},
+    {"out5.min", PARAM_TYPE_U32, 1000U},
+    {"out5.center", PARAM_TYPE_U32, 1500U},
+    {"out5.max", PARAM_TYPE_U32, 2000U},
+    {"out5.reversed", PARAM_TYPE_U32, 0U},
+    /* out6/out7: only meaningful on matek_h743 (HELM_SERVO_COUNT 8) --
+       afroflight32 (HELM_SERVO_COUNT 6) never reads these, see
+       HELM_PARAMS_MAX_OUTPUT_SLOTS's own comment in params.h. Still need
+       real default values, even if unread there -- 0 would be a nonsense
+       PWM pulse width, so these carry the same plain-slot default as
+       every other non-S3/OUT1 slot, not a bare 0. */
+    {"out6.min", PARAM_TYPE_U32, 1000U},
+    {"out6.center", PARAM_TYPE_U32, 1500U},
+    {"out6.max", PARAM_TYPE_U32, 2000U},
+    {"out6.reversed", PARAM_TYPE_U32, 0U},
+    {"out7.min", PARAM_TYPE_U32, 1000U},
+    {"out7.center", PARAM_TYPE_U32, 1500U},
+    {"out7.max", PARAM_TYPE_U32, 2000U},
+    {"out7.reversed", PARAM_TYPE_U32, 0U},
 };
 
 /* magic+version+CRC-validated record, same convention as
@@ -51,8 +108,12 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    back as 233 instead of falling back to its default). Bumped 2->3 for
    issue #31 (adding PARAM_SERVO_RATE grows values[] again, 2->3 u32s) --
    same shape change, same reasoning, applied proactively this time
-   rather than caught by a repeat of that same bug. */
-#define PARAMS_VERSION 3U
+   rather than caught by a repeat of that same bug. Bumped 3->4 for issue
+   #39 (adding the 32 output-slot-calibration params grows values[] from
+   3 to 35 u32s) -- same shape change again, same reasoning: a record
+   saved under version 3 must be discarded, not misread with 32 slot
+   params reinterpreted from bytes that were never written for them. */
+#define PARAMS_VERSION 4U
 
 typedef struct {
     uint8_t magic;

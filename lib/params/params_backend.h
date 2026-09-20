@@ -22,7 +22,14 @@
    split aoa-boat-controller's ConfigFlash uses on H743 (that project's
    kRegionSize), scaled down here since this store currently holds one
    test param, not that project's five real config records. */
-#define PARAMS_REGION_SIZE 64U
+/* Grown 64->256 for issue #39 (output.c's per-slot calibration params --
+   35 total params today, needing 148 bytes; 256 keeps a multiple of
+   32 -- H7's stm32h7.c backend requires that for its FLASHWORD program
+   granularity, see that file's own _Static_assert -- with real headroom
+   for whatever gets added next, still trivially smaller than either
+   chip's real physical erase unit (128KB sector on H743, 1KB page on
+   F103, both checked by each backend's own _Static_assert too). */
+#define PARAMS_REGION_SIZE 256U
 
 /* Reads len bytes starting at offset (0-based into the logical region
    above, not an absolute flash address) into dest. Flash is directly

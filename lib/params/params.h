@@ -22,6 +22,32 @@
    future issues build those records on top of this interface once it's
    proven. */
 
+/* Issue #39 -- output.c's per-physical-slot calibration (endpoints/
+   subtrim/reverse) gets a fixed-size block of this many slots' worth of
+   params, regardless of which board is actually compiling. 8 = the
+   larger of the two real boards' own HELM_SERVO_COUNT (matek_h743) --
+   sized to the max rather than each board's own HELM_SERVO_COUNT so
+   this enum can stay a plain, positionally-stable, literally-named list
+   (params.c's g_paramDefs needs real compile-time string literals for
+   the CLI's `param list`/`param set <name>` -- no runtime string
+   building exists in this store). Costs afroflight32 (HELM_SERVO_COUNT
+   6) 2 slots' worth of unused params -- 32 bytes of RAM, negligible even
+   against that board's own tight budget. output.c only ever reads
+   indices below its own HELM_SERVO_COUNT; the rest just sit unused. */
+#define HELM_PARAMS_MAX_OUTPUT_SLOTS 8
+
+/* Which field within one output slot's 4-param group -- see
+   param_output_slot_id() below. Order is fixed (matches the contiguous
+   layout PARAM_OUTPUT_SLOT_BASE reserves in ParamId) -- don't reorder,
+   same positional-storage discipline as ParamId itself. */
+typedef enum {
+    PARAM_OUTPUT_FIELD_MIN = 0,
+    PARAM_OUTPUT_FIELD_CENTER,
+    PARAM_OUTPUT_FIELD_MAX,
+    PARAM_OUTPUT_FIELD_REVERSED,
+    PARAM_OUTPUT_FIELD_COUNT,
+} ParamOutputField;
+
 /* Every persisted value gets a stable id here -- the registry/CLI index
    into this, not into raw byte offsets. Append new params at the end,
    never renumber/reuse one: a stale flash record's values are read back
@@ -41,8 +67,27 @@ typedef enum {
                                 on it -- not something that can differ per slot
                                 within a timer group, let alone per board).
                                 SERVO_RATE_50HZ/_333HZ (servo.h). */
-    PARAM_COUNT,
+
+    /* Issue #39 -- first of HELM_PARAMS_MAX_OUTPUT_SLOTS *
+       PARAM_OUTPUT_FIELD_COUNT contiguous per-slot-per-field params;
+       reach any of them via param_output_slot_id(), don't index this
+       directly. */
+    PARAM_OUTPUT_SLOT_BASE,
+
+    PARAM_COUNT = PARAM_OUTPUT_SLOT_BASE + (HELM_PARAMS_MAX_OUTPUT_SLOTS * PARAM_OUTPUT_FIELD_COUNT),
 } ParamId;
+
+/* Resolves the ParamId for output slot `slot`'s `field` -- `slot` is
+   output.c's own slotConfigs[] array index (0-based), NOT the physical
+   silkscreen label (S3/OUT1/etc, output.c's own per-slot `.name`), since
+   this enum is shared across boards whose silkscreen labels differ;
+   cross-reference against output.c's own slotConfigs[] table to map
+   index -> physical pad. `slot` must be < HELM_PARAMS_MAX_OUTPUT_SLOTS
+   (the compile-time max above), NOT necessarily this board's own
+   HELM_SERVO_COUNT, which may be smaller. */
+static inline ParamId param_output_slot_id(uint8_t slot, ParamOutputField field) {
+    return (ParamId)(PARAM_OUTPUT_SLOT_BASE + ((uint32_t)slot * PARAM_OUTPUT_FIELD_COUNT) + (uint32_t)field);
+}
 
 typedef enum {
     PARAM_TYPE_U32,

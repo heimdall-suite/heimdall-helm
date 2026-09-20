@@ -7,6 +7,9 @@
 #include "supervisor.h"
 #include "mapping.h"
 #include "control.h"
+#if HELM_FEATURE_PARAMS_PERSIST
+#include "params.h"
+#endif
 
 /* See mapping.c's own comment -- same placeholder-period-and-priority
    reasoning applies to every stage in this chain (issue #7). */
@@ -221,6 +224,61 @@ static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
 #error "output.c needs a slotConfigs[] table for this chip family -- see matek_h743/afroflight32's own for the shape"
 #endif
 
+/* Issue #39 -- per-slot endpoint/subtrim/reverse, formerly read straight
+   out of slotConfigs[] above, now a separate runtime-populated cache
+   read from the persisted param store instead (params.h's
+   param_output_slot_id(), slot index == this array's own index, matches
+   slotConfigs[]'s). slotConfigs[] itself keeps every OTHER field
+   (name/source/channelIndex/failsafePolicy/failsafeFixedValue/
+   hasSourceRangeOverride/sourceMin/Center/Max) as compile-time facts --
+   those are board wiring, not something a CLI/radio operator should be
+   able to change trackside, unlike physical-servo calibration (issue
+   #39's own scoping). Populated once in output_start(), before anything
+   downstream can read it (same "seed before scheduler starts" discipline
+   lastGoodValue[] itself already follows) -- resolve_slot() never reads
+   flash directly, matching every other params consumer in this
+   codebase (servo.c's own servoPeriodUs). */
+typedef struct {
+    uint16_t min;
+    uint16_t center;
+    uint16_t max;
+    bool reversed;
+} OutputSlotCalibration;
+
+static OutputSlotCalibration slotCalibration[HELM_SERVO_COUNT];
+
+static void load_slot_calibration(void) {
+    for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
+#if HELM_FEATURE_PARAMS_PERSIST
+        uint32_t value;
+
+        value = slotConfigs[i].outputMin;
+        param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_MIN), &value);
+        slotCalibration[i].min = (uint16_t)value;
+
+        value = slotConfigs[i].outputCenter;
+        param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_CENTER), &value);
+        slotCalibration[i].center = (uint16_t)value;
+
+        value = slotConfigs[i].outputMax;
+        param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_MAX), &value);
+        slotCalibration[i].max = (uint16_t)value;
+
+        value = slotConfigs[i].reversed ? 1U : 0U;
+        param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_REVERSED), &value);
+        slotCalibration[i].reversed = (value != 0U);
+#else
+        /* No persisted store on this board -- fall back to the
+           compile-time table directly, same "compile-time-safe
+           fallback" shape servo.c's own servoPeriodUs uses. */
+        slotCalibration[i].min = slotConfigs[i].outputMin;
+        slotCalibration[i].center = slotConfigs[i].outputCenter;
+        slotCalibration[i].max = slotConfigs[i].outputMax;
+        slotCalibration[i].reversed = slotConfigs[i].reversed;
+#endif
+    }
+}
+
 static QueueHandle_t output_queue;
 
 /* Per-slot memory for OUTPUT_FAILSAFE_HOLD (issue #37) -- the final,
@@ -281,6 +339,7 @@ static uint16_t apply_reverse(uint16_t value, uint16_t outputMin, uint16_t outpu
    not a stale substituted one. */
 static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) {
     const OutputSlotConfig *cfg = &slotConfigs[slot];
+    const OutputSlotCalibration *cal = &slotCalibration[slot];
 
     if (!sourceValid) {
         if (cfg->failsafePolicy == OUTPUT_FAILSAFE_FIXED) {
@@ -298,8 +357,8 @@ static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) 
         srcMax = cfg->sourceMax;
     }
 
-    uint16_t scaled = scale_slot(rawValue, srcMin, srcCenter, srcMax, cfg->outputMin, cfg->outputCenter, cfg->outputMax);
-    uint16_t const finalValue = cfg->reversed ? apply_reverse(scaled, cfg->outputMin, cfg->outputMax) : scaled;
+    uint16_t scaled = scale_slot(rawValue, srcMin, srcCenter, srcMax, cal->min, cal->center, cal->max);
+    uint16_t const finalValue = cal->reversed ? apply_reverse(scaled, cal->min, cal->max) : scaled;
 
     lastGoodValue[slot] = finalValue;
     return finalValue;
@@ -346,6 +405,11 @@ static void output_task(void *arg) {
 }
 
 void output_start(void) {
+    /* Must happen before anything below reads slotCalibration[] --
+       resolve_slot()'s seeding call a few lines down included (issue
+       #39). */
+    load_slot_calibration();
+
     output_queue = xQueueCreate(1, sizeof(OutputFrame));
 
     /* Seed the queue before anything downstream can peek it -- a
@@ -357,7 +421,7 @@ void output_start(void) {
     OutputFrame initial = {0};
     initial.status = RX_STATUS_FAILSAFE;
     for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
-        lastGoodValue[i] = slotConfigs[i].outputCenter;
+        lastGoodValue[i] = slotCalibration[i].center;
         initial.servos[i] = resolve_slot(i, false, 0);
     }
     xQueueOverwrite(output_queue, &initial);
