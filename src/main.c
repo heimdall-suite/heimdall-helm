@@ -204,19 +204,22 @@ int main(void) {
 #endif
 
 #if HELM_FEATURE_TELEMETRY
-    // Start the telemetry gather task (issue #16) -- table + API only so
-    // far, nothing real to gather yet (issue #17 adds the first source,
-    // #18/#19 add the S.Port/CRSF protocol adapters that actually put it
-    // on a wire). See .docs/architecture/telemetry.md.
+    // Start the telemetry gather task (issue #16) -- pulls TELEM_FIELD_TEST
+    // (#17's synthetic proof value) plus, on boards with HELM_HAS_BARO,
+    // real pressure/temperature from baro_get_latest() (issue #33). #19
+    // still owes the CRSF protocol adapter that puts any of this on a
+    // second kind of wire. See .docs/architecture/telemetry.md.
     telemetry_start();
 #endif
 
 #if HELM_FEATURE_TELEMETRY_SPORT && HELM_HAS_SPORT_UART
-    // Start the S.Port protocol adapter (issue #18) -- answers this
-    // board's own poll slot with TELEM_FIELD_TEST's current value, over
-    // UART7/PE8 ("TX7" silk). Independent flags, same reasoning as
-    // HELM_FEATURE_CLI/HELM_HAS_ROM_BOOTLOADER_JUMP above: "wants S.Port"
-    // and "has a ported S.Port UART transport" aren't the same thing.
+    // Start the S.Port protocol adapter (issue #18, extended #33) --
+    // answers this board's own poll slot over UART7/PE8 ("TX7" silk),
+    // round-robining TELEM_FIELD_TEST and the real baro fields one per
+    // poll (sport.c's own sport_fields[]). Independent flags, same
+    // reasoning as HELM_FEATURE_CLI/HELM_HAS_ROM_BOOTLOADER_JUMP above:
+    // "wants S.Port" and "has a ported S.Port UART transport" aren't the
+    // same thing.
     sport_start();
 #endif
 

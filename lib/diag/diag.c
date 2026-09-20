@@ -65,13 +65,22 @@ static void diag_wedge(void) {
     xTaskCreate(wedge_task, "wedge", configMINIMAL_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
 }
 
+/* No default case (issue #33) -- same "-Wswitch catches a forgotten
+   field" reasoning as telemetry.c's own sensor_status_to_telemetry_status(),
+   so adding a TelemetryField without a name here is a build warning, not
+   a silent "?" in diag output. */
 static const char *telemetry_field_name(TelemetryField field) {
     switch (field) {
         case TELEM_FIELD_TEST:
             return "test";
-        default:
-            return "?";
+        case TELEM_FIELD_BARO_PRESSURE:
+            return "baro_pa";
+        case TELEM_FIELD_BARO_TEMPERATURE:
+            return "baro_degc";
+        case TELEM_FIELD_COUNT:
+            break;
     }
+    return "?";
 }
 
 static const char *telemetry_status_name(TelemetryStatus status) {

@@ -33,6 +33,39 @@
    one rather than relearning that the hard way once one does. */
 #define SPORT_TEST_DATA_ID 0x5100
 
+/* Issue #33's first two real fields.
+
+   TELEM_FIELD_BARO_TEMPERATURE uses FrSky's own native T1 data ID
+   (0x0400) rather than a DIY one -- real type exists, value is plain
+   whole degrees C with no scaling, so a stock radio labels and displays
+   it correctly with no Lua script needed, unlike the DIY ones.
+
+   TELEM_FIELD_BARO_PRESSURE has no matching native type: FrSky's
+   altitude/vario sensors report a derived altitude, not raw station
+   pressure, and deriving true altitude needs a reference-pressure/
+   calibration design that doesn't exist yet (explicitly out of scope
+   for this issue) -- so this stays a DIY ID, next one up from
+   SPORT_TEST_DATA_ID in the same 0x51xx block, whole Pascals (plenty of
+   resolution for "is this sane," no consumer/Lua script parses it yet,
+   same as TEST's own value). */
+#define SPORT_BARO_TEMPERATURE_DATA_ID 0x0400
+#define SPORT_BARO_PRESSURE_DATA_ID 0x5101
+
+/* One entry per field this board's single physical ID (SPORT_PHYSICAL_ID)
+   can report -- real multi-value FrSky sensors (e.g. an FLVSS cycling
+   through cell voltages) answer one data ID per poll and rotate, rather
+   than trying to cram everything into one poll's response; sport_task()
+   below does the same. */
+static const struct {
+    TelemetryField field;
+    uint16_t dataId;
+} sport_fields[] = {
+    {TELEM_FIELD_TEST, SPORT_TEST_DATA_ID},
+    {TELEM_FIELD_BARO_PRESSURE, SPORT_BARO_PRESSURE_DATA_ID},
+    {TELEM_FIELD_BARO_TEMPERATURE, SPORT_BARO_TEMPERATURE_DATA_ID},
+};
+#define SPORT_FIELD_COUNT (sizeof(sport_fields) / sizeof(sport_fields[0]))
+
 #define SPORT_START_STOP 0x7E
 #define SPORT_DLE 0x7D
 #define SPORT_DLE_XOR 0x20
@@ -141,6 +174,12 @@ void sport_get_counters(uint32_t *pollMarkers, uint32_t *pollMatches) {
     *pollMatches = sportPollMatchCount;
 }
 
+/* Round-robin index into sport_fields[] -- advances exactly once per poll
+   addressed to us, regardless of whether that poll's chosen field ends
+   up sending a frame (see below), so one persistently FAILED field can't
+   starve the rotation by getting re-picked every time. */
+static uint8_t sportFieldIndex;
+
 static void sport_task(void *arg) {
     (void)arg;
 
@@ -154,12 +193,23 @@ static void sport_task(void *arg) {
         while (board_sport_uart_available()) {
             uint8_t const b = board_sport_uart_read_byte();
             if (sport_check_poll(b)) {
-                TelemetryEntry entry;
-                telemetry_get(TELEM_FIELD_TEST, &entry);
+                uint8_t const fieldIndex = sportFieldIndex;
+                sportFieldIndex = (uint8_t)((sportFieldIndex + 1) % SPORT_FIELD_COUNT);
 
-                uint8_t frame[SPORT_MAX_STUFFED_BYTES];
-                uint8_t const length = sport_build_data_frame(frame, SPORT_TEST_DATA_ID, (int32_t)entry.value);
-                board_sport_uart_write(frame, length);
+                TelemetryEntry entry;
+                telemetry_get(sport_fields[fieldIndex].field, &entry);
+
+                /* Skip this poll's response entirely rather than send a
+                   fabricated value -- a real device not answering every
+                   single poll is normal S.Port behavior, unlike lying
+                   about a field's value would be (baro.h's own comment
+                   on this same discipline). */
+                if (entry.status != TELEM_STATUS_FAILED) {
+                    uint8_t frame[SPORT_MAX_STUFFED_BYTES];
+                    uint8_t const length =
+                        sport_build_data_frame(frame, sport_fields[fieldIndex].dataId, (int32_t)entry.value);
+                    board_sport_uart_write(frame, length);
+                }
             }
         }
     }

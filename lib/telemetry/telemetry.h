@@ -29,9 +29,19 @@ typedef enum {
 typedef enum {
     /* Placeholder only -- issue #17's synthetic test value, proving the
        table/gather/adapter chain mechanically before any real producer
-       (sensors, etc.) exists. Real fields get added here as those
-       producers land. */
+       (sensors, etc.) exists. Kept alongside the real fields below, not
+       replaced by them -- same "keep the proof value" precedent
+       lib/params/params.h's PARAM_TEST_COUNTER set. */
     TELEM_FIELD_TEST,
+
+    /* Issue #33 -- real values, pulled from lib/sensors/baro.h's
+       baro_get_latest() by the gather task (telemetry.c), only on boards
+       with HELM_HAS_BARO set. FAILED (not STALE/zeroed) on any board
+       without a baro, or if the chip's own read fails -- same
+       never-fabricate-a-value discipline baro.h's own comment
+       describes. */
+    TELEM_FIELD_BARO_PRESSURE,    /* station pressure, Pa */
+    TELEM_FIELD_BARO_TEMPERATURE, /* chip's own die temperature, deg C */
 
     TELEM_FIELD_COUNT,
 } TelemetryField;
