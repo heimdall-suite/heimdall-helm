@@ -22,6 +22,12 @@
      signal lands on.
    - direction/reverse: some physical servos are mounted such that a
      normal command drives them backwards from what's intended.
+   - endpoint/subtrim calibration (issue #37): a piecewise min/center/max
+     scale from whatever range a slot's source produces (the known
+     RX_CHANNEL_RAW_* convention for passthrough, optionally something
+     else for a function) into this slot's own physical output range --
+     same "output mapping owns physical-actuator facts, not the source"
+     reasoning as failsafe/reverse above.
 
    HELM_SERVO_COUNT (board_features.h) sizes servos[] -- a real per-board
    hardware fact (how many physical servo connectors this board has),

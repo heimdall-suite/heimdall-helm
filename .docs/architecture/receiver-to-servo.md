@@ -179,6 +179,37 @@ Example table:
 | S3 | CH3 |
 | S4 | Roll control output |
 
+This is also where every other **physical-actuator fact** lives — not
+just failsafe substitution above, but direction and endpoint calibration
+too. All three share the same reasoning: they're properties of the
+physical servo itself (its mechanical travel limits, install orientation,
+horn/linkage-geometry trim), not of whatever signal happens to be
+driving it, and this is the one stage that actually knows which physical
+slot a signal lands on.
+
+- **Direction/reverse**: some physical servos are mounted such that a
+  normal command drives them backwards from what's intended. Each slot
+  carries its own independent reverse flag.
+- **Endpoint/subtrim (min/center/max)**: each slot has its own physical
+  travel range. A source's value is scaled into that range piecewise —
+  source-min→slot-min, source-center→slot-center, source-max→slot-max,
+  as two independent linear segments — so trimming the center doesn't
+  require min/max to stay symmetric around it (the same endpoint+subtrim
+  convention real RC transmitters/flight controllers use).
+- A **function's output is not guaranteed to share passthrough's known
+  raw-channel range** — in the general case a function could be purely
+  sensor-driven, using zero or more RX inputs only to alter its behavior
+  (mode/target), not to define its output's scale. A passthrough
+  channel's source range is always the RX driver's own raw range; a
+  function-fed slot may instead declare its own real source range, so
+  its value gets scaled correctly rather than silently misread as if it
+  were in the RX channel's raw range.
+- A slot's **fixed failsafe value is a literal physical position** in
+  that slot's own output range, not a source-range value run through the
+  normal scale/reverse pipeline — the whole point of a fixed failsafe
+  value is "snap to this known-safe physical spot," independent of
+  source range or wiring direction.
+
 ## Servo driver
 
 Takes the final per-servo values from the output mapping stage and drives

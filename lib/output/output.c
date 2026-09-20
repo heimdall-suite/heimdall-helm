@@ -25,26 +25,62 @@ typedef enum {
 
 /* Per-slot config -- private to this file (output.h's own comment: the
    servo driver, and everything upstream, doesn't need to know any of
-   this). `channelIndex` only means anything when `source` is
-   OUTPUT_SOURCE_PASSTHROUGH; `failsafeFixedValue` only when
-   `failsafePolicy` is OUTPUT_FAILSAFE_FIXED. */
+   this). */
 typedef struct {
     const char *name;
     OutputSourceType source;
-    uint8_t channelIndex;
+    uint8_t channelIndex; /* only meaningful when source == OUTPUT_SOURCE_PASSTHROUGH */
+
+    /* Issue #37 -- optional, only meaningful/used when source is a
+       function (not OUTPUT_SOURCE_PASSTHROUGH, whose source range is
+       always RX_CHANNEL_RAW_MIN/CENTER/MAX -- an override here would be
+       meaningless and is ignored). Lets a future function with a
+       genuinely different native output range declare it, instead of
+       being silently misread as RX ticks. Unset for every slot in this
+       pass -- control.c's Pitch loop still genuinely emits
+       RX_CHANNEL_RAW-range values (its own placeholder body just passes
+       pitchTarget through), so it correctly falls back to that same
+       default rather than needing an override yet. */
+    bool hasSourceRangeOverride;
+    uint16_t sourceMin;
+    uint16_t sourceCenter;
+    uint16_t sourceMax;
+
+    /* This slot's own physical endpoint/subtrim calibration (issue #37)
+       -- always used, regardless of source. scale_slot() below maps
+       sourceMin/Center/Max onto these three points as two independent
+       linear segments (real RC endpoint+subtrim convention: trimming
+       the center doesn't require min/max to stay symmetric around it),
+       not one straight line across the whole span. Placeholder units --
+       same raw-tick-like convention every other stage uses until #31
+       decides real per-servo physical units. */
+    uint16_t outputMin;
+    uint16_t outputCenter;
+    uint16_t outputMax;
+
     bool reversed;
+
     OutputFailsafePolicy failsafePolicy;
+    /* Only meaningful when failsafePolicy == OUTPUT_FAILSAFE_FIXED -- a
+       literal physical position in THIS slot's own output range (issue
+       #37), applied with no scaling or reverse at all. FIXED means "snap
+       to this known-safe physical spot," not "as if the source read this
+       value." */
     uint16_t failsafeFixedValue;
 } OutputSlotConfig;
 
-/* Issue #36's first-pass hardcoded table -- same "prove the mechanism,
-   real per-user config is later params-backed work" scope #34/#35 used
-   for their own tables. One control-loop-fed slot (Pitch, #35); every
-   other slot is a straight passthrough of the same-numbered channel.
-   Slot 1 is deliberately configured reversed + fixed-failsafe, not
-   because it needs to be, but so this first pass actually exercises both
-   new mechanisms on real hardware rather than leaving them unverified
-   defaults nothing ever triggers.
+/* Issue #36/#37's first-pass hardcoded table -- same "prove the
+   mechanism, real per-user config is later params-backed work" scope
+   #34/#35 used for their own tables. One control-loop-fed slot (Pitch,
+   #35); every other slot is a straight passthrough of the same-numbered
+   channel. S1/OUT1 is deliberately configured reversed, fixed-failsafe,
+   AND with an asymmetric, non-identity output range (300/900/1700, not
+   RX_CHANNEL_RAW_MIN/CENTER/MAX) -- arbitrary demo numbers, not a real
+   calibrated servo limit, chosen so this pass actually exercises
+   piecewise scaling, not just an identity passthrough that happens to
+   look right by coincidence. Every other slot's output range is
+   RX_CHANNEL_RAW_MIN/CENTER/MAX, an identity mapping, so #36's own
+   already-bench-verified numbers for those slots don't change.
 
    Per-board table, not one shared array -- HELM_SERVO_COUNT differs
    (board_features.h), and output.c is a single shared file (no
@@ -54,23 +90,109 @@ typedef struct {
    uses for its own per-family HAL include. */
 #if defined(STM32H7)
 static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
-    {"S1", OUTPUT_SOURCE_PASSTHROUGH, 0, true, OUTPUT_FAILSAFE_FIXED, RX_CHANNEL_RAW_CENTER},
-    {"S2", OUTPUT_SOURCE_PITCH_CONTROL, 0, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"S3", OUTPUT_SOURCE_PASSTHROUGH, 2, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"S4", OUTPUT_SOURCE_PASSTHROUGH, 3, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"S5", OUTPUT_SOURCE_PASSTHROUGH, 4, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"S6", OUTPUT_SOURCE_PASSTHROUGH, 5, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"S7", OUTPUT_SOURCE_PASSTHROUGH, 6, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"S8", OUTPUT_SOURCE_PASSTHROUGH, 7, false, OUTPUT_FAILSAFE_HOLD, 0},
+    {.name = "S1",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 0,
+     .outputMin = 300,
+     .outputCenter = 900,
+     .outputMax = 1700,
+     .reversed = true,
+     .failsafePolicy = OUTPUT_FAILSAFE_FIXED,
+     .failsafeFixedValue = 900},
+    {.name = "S2",
+     .source = OUTPUT_SOURCE_PITCH_CONTROL,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S3",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 2,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S4",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 3,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S5",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 4,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S6",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 5,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S7",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 6,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "S8",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 7,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
 };
 #elif defined(STM32F1)
 static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
-    {"OUT1", OUTPUT_SOURCE_PASSTHROUGH, 0, true, OUTPUT_FAILSAFE_FIXED, RX_CHANNEL_RAW_CENTER},
-    {"OUT2", OUTPUT_SOURCE_PITCH_CONTROL, 0, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"OUT3", OUTPUT_SOURCE_PASSTHROUGH, 2, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"OUT4", OUTPUT_SOURCE_PASSTHROUGH, 3, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"OUT5", OUTPUT_SOURCE_PASSTHROUGH, 4, false, OUTPUT_FAILSAFE_HOLD, 0},
-    {"OUT6", OUTPUT_SOURCE_PASSTHROUGH, 5, false, OUTPUT_FAILSAFE_HOLD, 0},
+    {.name = "OUT1",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 0,
+     .outputMin = 300,
+     .outputCenter = 900,
+     .outputMax = 1700,
+     .reversed = true,
+     .failsafePolicy = OUTPUT_FAILSAFE_FIXED,
+     .failsafeFixedValue = 900},
+    {.name = "OUT2",
+     .source = OUTPUT_SOURCE_PITCH_CONTROL,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "OUT3",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 2,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "OUT4",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 3,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "OUT5",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 4,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
+    {.name = "OUT6",
+     .source = OUTPUT_SOURCE_PASSTHROUGH,
+     .channelIndex = 5,
+     .outputMin = RX_CHANNEL_RAW_MIN,
+     .outputCenter = RX_CHANNEL_RAW_CENTER,
+     .outputMax = RX_CHANNEL_RAW_MAX,
+     .failsafePolicy = OUTPUT_FAILSAFE_HOLD},
 };
 #else
 #error "output.c needs a slotConfigs[] table for this chip family -- see matek_h743/afroflight32's own for the shape"
@@ -78,43 +200,86 @@ static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
 
 static QueueHandle_t output_queue;
 
-/* Per-slot memory for OUTPUT_FAILSAFE_HOLD -- the raw (pre-reverse) value
-   this slot's source last actually reported as valid. Seeded to
-   RX_CHANNEL_RAW_CENTER at start (output_start()), same "safe centered
-   default until a real value exists" reasoning mapping.c's own failsafe
-   setpoint uses. */
+/* Per-slot memory for OUTPUT_FAILSAFE_HOLD (issue #37) -- the final,
+   post-scale-and-reverse physical value this slot last actually wrote
+   out, NOT the pre-scale raw source value (#36's own original
+   implementation) -- "hold" means "repeat the last real physical
+   position," which only the post-scale value actually represents once
+   slots have their own real endpoints. Seeded to each slot's own
+   outputCenter at start (output_start()), same "safe centered default
+   until a real value exists" reasoning mapping.c's own failsafe setpoint
+   uses. */
 static uint16_t lastGoodValue[HELM_SERVO_COUNT];
 
-/* Reverse is a pure last-step transform, applied identically whether the
-   value about to go out is a live passthrough/control value or a
-   substituted hold/fixed one -- so a physically-reversed servo's
-   failsafe position is still correct in real-world terms too. Mirrors
-   the raw range symmetrically around its own midpoint; may need
-   revisiting once #31 and real per-servo endpoint/trim config exist
-   (output.h's own comment -- "center" itself isn't finally decided yet
-   either). */
-static uint16_t apply_reverse(uint16_t value) {
-    return (uint16_t)(RX_CHANNEL_RAW_MIN + RX_CHANNEL_RAW_MAX - value);
+/* Piecewise linear scale (issue #37): sourceMin->outputMin,
+   sourceCenter->outputCenter, sourceMax->outputMax, as two independent
+   segments -- real RC endpoint+subtrim convention, not one straight line
+   across the whole span, so trimming the center doesn't require min/max
+   to stay symmetric around it. Integer math throughout (this project's
+   established style -- see e.g. diag_baro()/diag_telemetry()'s own
+   "avoid %f" comments -- and afroflight32 has no hardware FPU to begin
+   with). A degenerate half-span (sourceCenter == sourceMin or ==
+   sourceMax, a misconfigured table) falls back to that segment's own
+   output endpoint rather than dividing by zero. */
+static uint16_t scale_slot(int32_t raw, int32_t srcMin, int32_t srcCenter, int32_t srcMax, int32_t dstMin,
+                            int32_t dstCenter, int32_t dstMax) {
+    if (raw <= srcCenter) {
+        int32_t const srcSpan = srcCenter - srcMin;
+        if (srcSpan == 0) {
+            return (uint16_t)dstMin;
+        }
+        return (uint16_t)(dstMin + ((raw - srcMin) * (dstCenter - dstMin)) / srcSpan);
+    }
+
+    int32_t const srcSpan = srcMax - srcCenter;
+    if (srcSpan == 0) {
+        return (uint16_t)dstMax;
+    }
+    return (uint16_t)(dstCenter + ((raw - srcCenter) * (dstMax - dstCenter)) / srcSpan);
+}
+
+/* Reverse mirrors the slot's OWN output range (issue #37) -- NOT the
+   global RX_CHANNEL_RAW_MIN/MAX (#36's own original implementation),
+   which stopped being correct the moment slots got their own real
+   endpoints: by the time reverse runs, a value is already expressed in
+   this slot's physical range, not the RX raw range. */
+static uint16_t apply_reverse(uint16_t value, uint16_t outputMin, uint16_t outputMax) {
+    return (uint16_t)(outputMin + outputMax - value);
 }
 
 /* Resolves one slot's final output value: substitutes per its own
-   failsafe policy if its source has nothing valid right now, then
-   applies reverse if configured. Also updates lastGoodValue[slot] when
-   the source IS valid, so a later failsafe drop holds the real last
-   value, not a stale substituted one. */
+   failsafe policy if its source has nothing valid right now, else scales
+   the raw source value through this slot's own endpoint/subtrim
+   calibration; then applies reverse if configured -- except for a FIXED
+   failsafe value, which is already a literal physical position (issue
+   #37) and skips scaling/reverse entirely. Also updates lastGoodValue[
+   slot] with the final value actually produced, whenever the source IS
+   valid, so a later failsafe drop holds the real last physical position,
+   not a stale substituted one. */
 static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) {
-    uint16_t finalValue;
+    const OutputSlotConfig *cfg = &slotConfigs[slot];
 
-    if (sourceValid) {
-        lastGoodValue[slot] = rawValue;
-        finalValue = rawValue;
-    } else if (slotConfigs[slot].failsafePolicy == OUTPUT_FAILSAFE_FIXED) {
-        finalValue = slotConfigs[slot].failsafeFixedValue;
-    } else {
-        finalValue = lastGoodValue[slot];
+    if (!sourceValid) {
+        if (cfg->failsafePolicy == OUTPUT_FAILSAFE_FIXED) {
+            return cfg->failsafeFixedValue;
+        }
+        return lastGoodValue[slot];
     }
 
-    return slotConfigs[slot].reversed ? apply_reverse(finalValue) : finalValue;
+    uint16_t srcMin = RX_CHANNEL_RAW_MIN;
+    uint16_t srcCenter = RX_CHANNEL_RAW_CENTER;
+    uint16_t srcMax = RX_CHANNEL_RAW_MAX;
+    if (cfg->source != OUTPUT_SOURCE_PASSTHROUGH && cfg->hasSourceRangeOverride) {
+        srcMin = cfg->sourceMin;
+        srcCenter = cfg->sourceCenter;
+        srcMax = cfg->sourceMax;
+    }
+
+    uint16_t scaled = scale_slot(rawValue, srcMin, srcCenter, srcMax, cfg->outputMin, cfg->outputCenter, cfg->outputMax);
+    uint16_t const finalValue = cfg->reversed ? apply_reverse(scaled, cfg->outputMin, cfg->outputMax) : scaled;
+
+    lastGoodValue[slot] = finalValue;
+    return finalValue;
 }
 
 static void output_task(void *arg) {
@@ -169,7 +334,7 @@ void output_start(void) {
     OutputFrame initial = {0};
     initial.status = RX_STATUS_FAILSAFE;
     for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
-        lastGoodValue[i] = RX_CHANNEL_RAW_CENTER;
+        lastGoodValue[i] = slotConfigs[i].outputCenter;
         initial.servos[i] = resolve_slot(i, false, 0);
     }
     xQueueOverwrite(output_queue, &initial);
