@@ -50,4 +50,8 @@
    matek_h743/board_features.h's own comment for what this gates. */
 #define HELM_HAS_SPORT_UART 0
 
+/* HELM_SERVO_COUNT: no board on the bench yet, don't guess -- same as
+   every other flag in this file (see board.h). */
+#define HELM_SERVO_COUNT 0
+
 #endif /* HELM_BOARD_FEATURES_H */

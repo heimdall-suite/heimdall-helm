@@ -13,6 +13,19 @@
 
 #define RX_MAX_CHANNELS 16
 
+/* This project's sbus.c decode was ported from bolderflight/sbus (that
+   file's own header comment), whose raw 11-bit tick convention this
+   project inherits unchanged: 172 min, 992 center, 1811 max (988/1500/
+   2012us on the wire, standard `us = raw * 0.625 + 880` conversion).
+   Bench-confirmed against a real 3-position switch's real raw+us output
+   (issue #34's own bench pass -- see mapping.c). Shared here, not kept
+   private to one stage, since multiple stages downstream of RX need this
+   same raw range: mapping.c's PitchMode banding/failsafe setpoint,
+   output.c's own failsafe fixed-value defaults and reverse math (#36). */
+#define RX_CHANNEL_RAW_MIN 172U
+#define RX_CHANNEL_RAW_MAX 1811U
+#define RX_CHANNEL_RAW_CENTER 992U
+
 typedef enum {
     RX_STATUS_OK,       /* covers both a fresh frame and a currently-stale-
                             but-not-yet-timed-out one -- both look the same

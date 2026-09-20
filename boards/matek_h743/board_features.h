@@ -80,4 +80,14 @@
    on why these stay two separate flags. */
 #define HELM_HAS_SPORT_UART 1
 
+/* HELM_SERVO_COUNT: real per-board hardware fact (issue #36) -- how many
+   physical servo connectors output.c's slotConfigs[] table sizes itself
+   to, generally fewer than RX_MAX_CHANNELS (rx.h). Count only, not real
+   pin/timer facts yet -- those are issue #31's job (real PWM driver),
+   still open; #36 only needs to know how many slots exist. 8 (S3-S10)
+   per issue #31's own body, itself sourced from aoa-boat-controller's
+   pin headers -- re-verify against physical hardware before trusting,
+   same as every other pin/count fact carried over from that project. */
+#define HELM_SERVO_COUNT 8
+
 #endif /* HELM_BOARD_FEATURES_H */

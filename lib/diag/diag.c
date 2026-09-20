@@ -17,10 +17,16 @@
 #include "imu.h"
 #include "baro.h"
 
-/* `pipeline`: prints the Input->Mapping->Control->Output->Servo stub
-   chain's (issue #7) final stage output -- the plumbing this chain
-   exists to prove, made observable on the bench without needing real RX
-   hardware or a scope on a PWM pin. */
+/* `pipeline`: prints the Input->Mapping->Control->Output->Servo chain's
+   final stage output -- as of #36, real per-slot output mapping
+   (passthrough+reverse+failsafe, or the Pitch control loop), not just
+   plumbing-proof passthrough. Made observable on the bench without
+   needing real RX hardware or a scope on a PWM pin.
+
+   Loop bound is HELM_SERVO_COUNT (board_features.h), NOT RX_MAX_CHANNELS
+   -- ServoFrame.servos[]/OutputFrame.servos[] are sized to the real
+   per-board servo slot count since #36, generally fewer than the RX
+   channel count every earlier stage stayed sized to. */
 static void diag_pipeline(void) {
     ServoFrame frame;
     servo_get_latest(&frame);
@@ -28,7 +34,7 @@ static void diag_pipeline(void) {
     char line[160];
     int n = snprintf(line, sizeof(line), "pipeline: status=%s servos=[",
                       frame.status == RX_STATUS_OK ? "OK" : "FAILSAFE");
-    for (int i = 0; i < RX_MAX_CHANNELS && n < (int)sizeof(line); i++) {
+    for (int i = 0; i < HELM_SERVO_COUNT && n < (int)sizeof(line); i++) {
         n += snprintf(line + n, sizeof(line) - n, "%s%u", i == 0 ? "" : " ", frame.servos[i]);
     }
     snprintf(line + n, sizeof(line) - n, "]\r\n");

@@ -27,10 +27,9 @@
 #define MAPPING_PITCH_MODE_CHANNEL_INDEX 8   /* CH9 */
 #define MAPPING_PITCH_TARGET_CHANNEL_INDEX 3 /* CH4 */
 
-/* This project's sbus.c decode was ported from bolderflight/sbus (that
-   file's own header comment), whose raw 11-bit tick convention this
-   project inherits unchanged: 172 min, 992 center, 1811 max (988/1500/
-   2012us on the wire, standard `us = raw * 0.625 + 880` conversion).
+/* Raw-tick range/center is rx.h's RX_CHANNEL_RAW_MIN/MAX/CENTER now --
+   promoted there (issue #36) since output.c needs the same center value
+   for its own failsafe/reverse math, not kept as a private copy here.
    Bench-confirmed end to end (issue #34, matek_h743, live receiver
    bound) -- NOT which channel this happens to be wired to (that's the
    throwaway part, see above), but the raw-tick<->microsecond conversion
@@ -44,14 +43,10 @@
    some arbitrary in-between value, so this equal-thirds banding classifies
    all three with wide margin regardless of exactly where the two
    boundaries fall. */
-#define MAPPING_CHANNEL_RAW_MIN 172U
-#define MAPPING_CHANNEL_RAW_MAX 1811U
-#define MAPPING_CHANNEL_RAW_CENTER 992U
-
 static PitchMode pitch_mode_from_raw(uint16_t raw) {
-    uint16_t const span = MAPPING_CHANNEL_RAW_MAX - MAPPING_CHANNEL_RAW_MIN;
-    uint16_t const lowBoundary = (uint16_t)(MAPPING_CHANNEL_RAW_MIN + span / 3U);
-    uint16_t const highBoundary = (uint16_t)(MAPPING_CHANNEL_RAW_MIN + (span * 2U) / 3U);
+    uint16_t const span = RX_CHANNEL_RAW_MAX - RX_CHANNEL_RAW_MIN;
+    uint16_t const lowBoundary = (uint16_t)(RX_CHANNEL_RAW_MIN + span / 3U);
+    uint16_t const highBoundary = (uint16_t)(RX_CHANNEL_RAW_MIN + (span * 2U) / 3U);
 
     if (raw < lowBoundary) {
         return PITCH_MODE_OFF;
@@ -74,7 +69,7 @@ static void mapping_task(void *arg) {
     MappingFrame fallback = {0};
     fallback.status = RX_STATUS_FAILSAFE;
     fallback.pitchMode = PITCH_MODE_OFF;
-    fallback.pitchTarget = MAPPING_CHANNEL_RAW_CENTER;
+    fallback.pitchTarget = RX_CHANNEL_RAW_CENTER;
     SupervisorHandle handle = supervisor_register("mapping", mapping_queue, &fallback,
                                                    sizeof(fallback),
                                                    pdMS_TO_TICKS(MAPPING_TASK_PERIOD_MS * 3));
@@ -97,7 +92,7 @@ static void mapping_task(void *arg) {
             /* Mode/target function failsafe substitution -- this stage's
                own job (mapping.h's header comment), unlike passthrough. */
             out.pitchMode = PITCH_MODE_OFF;
-            out.pitchTarget = MAPPING_CHANNEL_RAW_CENTER;
+            out.pitchTarget = RX_CHANNEL_RAW_CENTER;
         } else {
             out.pitchMode = pitch_mode_from_raw(in.channels[MAPPING_PITCH_MODE_CHANNEL_INDEX]);
             out.pitchTarget = in.channels[MAPPING_PITCH_TARGET_CHANNEL_INDEX];
@@ -117,7 +112,7 @@ void mapping_start(void) {
     MappingFrame initial = {0};
     initial.status = RX_STATUS_FAILSAFE;
     initial.pitchMode = PITCH_MODE_OFF;
-    initial.pitchTarget = MAPPING_CHANNEL_RAW_CENTER;
+    initial.pitchTarget = RX_CHANNEL_RAW_CENTER;
     xQueueOverwrite(mapping_queue, &initial);
 
     xTaskCreate(mapping_task, "mapping", configMINIMAL_STACK_SIZE, NULL,

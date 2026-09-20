@@ -117,4 +117,12 @@
    H743's UART7/PE8 choice. */
 #define HELM_HAS_SPORT_UART 0
 
+/* HELM_SERVO_COUNT: real per-board hardware fact (issue #36) -- see
+   matek_h743/board_features.h's own comment for what this gates. 6
+   (OUT1-6) per issue #31's own body, itself sourced from aoa-boat-
+   controller's pin headers -- re-verify against physical hardware before
+   trusting, same as every other pin/count fact carried over from that
+   project. */
+#define HELM_SERVO_COUNT 6
+
 #endif /* HELM_BOARD_FEATURES_H */
