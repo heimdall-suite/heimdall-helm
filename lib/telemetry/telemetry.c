@@ -8,6 +8,12 @@
 #if HELM_HAS_BARO
 #include "baro.h"
 #endif
+#if HELM_HAS_BATTERY_SENSE
+#include "battery.h"
+#endif
+#if HELM_HAS_GPS
+#include "gps.h"
+#endif
 
 /* Placeholder task period -- pure plumbing stub (issue #16), same as
    every other stage's stub period (e.g. RX_TASK_PERIOD_MS): no real
@@ -27,7 +33,7 @@
    update can never race a concurrent read of a different field. */
 static QueueHandle_t field_queues[TELEM_FIELD_COUNT];
 
-#if HELM_HAS_BARO
+#if HELM_HAS_BARO || HELM_HAS_BATTERY_SENSE || HELM_HAS_GPS
 /* Explicit switch, not a cast -- SensorStatus and TelemetryStatus share
    the same OK/STALE/FAILED tiers but are deliberately not the same type
    (sensors.h's own comment: sensor drivers and telemetry are independent
@@ -47,7 +53,7 @@ static TelemetryStatus sensor_status_to_telemetry_status(SensorStatus status) {
     }
     return TELEM_STATUS_FAILED;
 }
-#endif
+#endif /* HELM_HAS_BARO || HELM_HAS_BATTERY_SENSE || HELM_HAS_GPS */
 
 static void telemetry_gather_task(void *arg) {
     (void)arg;
@@ -76,6 +82,25 @@ static void telemetry_gather_task(void *arg) {
         TelemetryStatus const baroStatus = sensor_status_to_telemetry_status(baroSample.status);
         telemetry_set(TELEM_FIELD_BARO_PRESSURE, baroSample.pressure_pa, baroStatus);
         telemetry_set(TELEM_FIELD_BARO_TEMPERATURE, baroSample.temperature_c, baroStatus);
+#endif
+
+#if HELM_HAS_BATTERY_SENSE
+        BatterySample batterySample;
+        battery_get_latest(&batterySample);
+        TelemetryStatus const batteryStatus = sensor_status_to_telemetry_status(batterySample.status);
+        telemetry_set(TELEM_FIELD_BATTERY_VOLTAGE, batterySample.voltage_v, batteryStatus);
+        telemetry_set(TELEM_FIELD_BATTERY_CURRENT, batterySample.current_a, batteryStatus);
+#endif
+
+#if HELM_HAS_GPS
+        GpsFix gpsFix;
+        gps_get_latest(&gpsFix);
+        TelemetryStatus const gpsStatus = sensor_status_to_telemetry_status(gpsFix.status);
+        telemetry_set(TELEM_FIELD_GPS_LATITUDE, gpsFix.latitude_deg, gpsStatus);
+        telemetry_set(TELEM_FIELD_GPS_LONGITUDE, gpsFix.longitude_deg, gpsStatus);
+        telemetry_set(TELEM_FIELD_GPS_ALTITUDE, gpsFix.altitude_m, gpsStatus);
+        telemetry_set(TELEM_FIELD_GPS_SPEED, gpsFix.speed_mps, gpsStatus);
+        telemetry_set(TELEM_FIELD_GPS_SATELLITES, (float)gpsFix.satellites, gpsStatus);
 #endif
     }
 }

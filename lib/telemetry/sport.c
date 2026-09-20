@@ -7,6 +7,7 @@
    board_sport_uart_* transport (board.h). */
 #if HELM_HAS_SPORT_UART
 
+#include <stdbool.h>
 #include "FreeRTOS.h"
 #include "task.h"
 #include "board.h"
@@ -51,20 +52,123 @@
 #define SPORT_BARO_TEMPERATURE_DATA_ID 0x0400
 #define SPORT_BARO_PRESSURE_DATA_ID 0x5101
 
+/* Issue #41 -- native FrSky data IDs for battery/GPS, verified against
+   Betaflight's own telemetry/smartport.c (src/main/telemetry/smartport.c,
+   master branch, checked 2026-09-21) rather than guessed -- this project's
+   own established standard for any protocol fact (same source #18/#33's
+   frame-building/checksum code was itself ported from). Using real native
+   IDs, not DIY ones, means these show up correctly labeled/scaled on a
+   stock radio with no Lua script needed, same reasoning
+   SPORT_BARO_TEMPERATURE_DATA_ID's own T1 choice already used. */
+#define SPORT_VFAS_DATA_ID 0x0210     /* FSSP_DATAID_VFAS -- pack voltage, 0.01V units */
+#define SPORT_CURRENT_DATA_ID 0x0200  /* FSSP_DATAID_CURRENT -- pack current, 0.1A units */
+#define SPORT_LATLONG_DATA_ID 0x0800  /* FSSP_DATAID_LATLONG -- same ID sent twice per full
+                                          fix, once for latitude and once for longitude, see
+                                          sport_encode_gps_coord()'s own comment */
+#define SPORT_GPS_ALT_DATA_ID 0x0820  /* FSSP_DATAID_GPS_ALT -- centimeters */
+#define SPORT_SPEED_DATA_ID 0x0830    /* FSSP_DATAID_SPEED -- knots * 1000 */
+
+/* How to turn a telemetry.h field's raw physical-unit value (volts,
+   amps, degrees, meters, m/s -- see each TELEM_FIELD_* comment) into
+   the integer this data ID actually expects on the wire. Most existing
+   fields (test, baro) already store the exact value S.Port wants and
+   need no conversion; the new ones in this issue don't. */
+typedef enum {
+    SPORT_ENCODE_RAW,               /* cast straight to int32 -- test/baro's existing shape */
+    SPORT_ENCODE_CENTIVOLTS,        /* volts -> volts*100 */
+    SPORT_ENCODE_DECIAMPS,          /* amps -> amps*10 */
+    SPORT_ENCODE_ALT_CM,            /* meters -> centimeters */
+    SPORT_ENCODE_SPEED_KNOTS_X1000, /* m/s -> knots*1000 */
+    SPORT_ENCODE_GPS_LAT,           /* degrees -> FrSky packed lat/lon, bit31 clear */
+    SPORT_ENCODE_GPS_LON,           /* degrees -> FrSky packed lat/lon, bit31 set */
+} SportEncodeKind;
+
 /* One entry per field this board's single physical ID (SPORT_PHYSICAL_ID)
    can report -- real multi-value FrSky sensors (e.g. an FLVSS cycling
    through cell voltages) answer one data ID per poll and rotate, rather
    than trying to cram everything into one poll's response; sport_task()
-   below does the same. */
+   below does the same. TELEM_FIELD_GPS_LATITUDE/_LONGITUDE deliberately
+   share SPORT_LATLONG_DATA_ID -- that's the real FrSky protocol shape
+   (one ID, alternating meaning), not a mistake; sport_encode_value()
+   below is what tells them apart. TELEM_FIELD_GPS_SATELLITES has no
+   entry here -- no native S.Port slot exists for it (telemetry.h's own
+   comment), CLI diag only. */
 static const struct {
     TelemetryField field;
     uint16_t dataId;
+    SportEncodeKind encode;
 } sport_fields[] = {
-    {TELEM_FIELD_TEST, SPORT_TEST_DATA_ID},
-    {TELEM_FIELD_BARO_PRESSURE, SPORT_BARO_PRESSURE_DATA_ID},
-    {TELEM_FIELD_BARO_TEMPERATURE, SPORT_BARO_TEMPERATURE_DATA_ID},
+    {TELEM_FIELD_TEST, SPORT_TEST_DATA_ID, SPORT_ENCODE_RAW},
+    {TELEM_FIELD_BARO_PRESSURE, SPORT_BARO_PRESSURE_DATA_ID, SPORT_ENCODE_RAW},
+    {TELEM_FIELD_BARO_TEMPERATURE, SPORT_BARO_TEMPERATURE_DATA_ID, SPORT_ENCODE_RAW},
+#if HELM_HAS_BATTERY_SENSE
+    {TELEM_FIELD_BATTERY_VOLTAGE, SPORT_VFAS_DATA_ID, SPORT_ENCODE_CENTIVOLTS},
+    {TELEM_FIELD_BATTERY_CURRENT, SPORT_CURRENT_DATA_ID, SPORT_ENCODE_DECIAMPS},
+#endif
+#if HELM_HAS_GPS
+    {TELEM_FIELD_GPS_LATITUDE, SPORT_LATLONG_DATA_ID, SPORT_ENCODE_GPS_LAT},
+    {TELEM_FIELD_GPS_LONGITUDE, SPORT_LATLONG_DATA_ID, SPORT_ENCODE_GPS_LON},
+    {TELEM_FIELD_GPS_ALTITUDE, SPORT_GPS_ALT_DATA_ID, SPORT_ENCODE_ALT_CM},
+    {TELEM_FIELD_GPS_SPEED, SPORT_SPEED_DATA_ID, SPORT_ENCODE_SPEED_KNOTS_X1000},
+#endif
 };
 #define SPORT_FIELD_COUNT (sizeof(sport_fields) / sizeof(sport_fields[0]))
+
+/* Packs a signed decimal-degrees value into FrSky's real LATLONG wire
+   format -- ported verbatim (not re-derived) from Betaflight's
+   telemetry/smartport.c FSSP_DATAID_LATLONG case: magnitude in degrees
+   is rescaled to minutes*10000 via the exact same "(x + x/2) / 25"
+   fixed-point trick that file uses (equivalent to x*0.06, i.e.
+   degrees*1e7 -> minutes*10000, but division-by-power-of-2-friendly),
+   bit30 set if the original value was negative (S or W), bit31 set only
+   for longitude (0 for latitude) -- that source's own comment: "the MSB
+   of the sent uint32_t helps FrSky keep track". isLongitude selects
+   which of those last two bits this call sets; the caller (sport_encode_
+   value()) is responsible for actually alternating between the two
+   across polls, same "same ID sent twice" shape that source uses. */
+static uint32_t sport_encode_gps_coord(float degrees, bool isLongitude) {
+    float const absDegrees = degrees < 0.0f ? -degrees : degrees;
+    uint32_t const scaledE7 = (uint32_t)(absDegrees * 10000000.0f);
+    uint32_t packed = (scaledE7 + scaledE7 / 2) / 25U;
+
+    if (isLongitude) {
+        packed |= 0x80000000U;
+    }
+    if (degrees < 0.0f) {
+        packed |= 0x40000000U;
+    }
+    return packed;
+}
+
+/* Converts one telemetry.h entry's raw physical-unit value into the
+   int32_t sport_build_data_frame() should actually send, per this
+   field's SportEncodeKind. Scale factors (100, 10, 100, 1944.0/100)
+   match Betaflight's own smartport.c comments verbatim (see each
+   SportEncodeKind enumerator's own comment above) -- not independently
+   derived. */
+static int32_t sport_encode_value(SportEncodeKind encode, float value) {
+    switch (encode) {
+    case SPORT_ENCODE_CENTIVOLTS:
+        return (int32_t)(value * 100.0f);
+    case SPORT_ENCODE_DECIAMPS:
+        return (int32_t)(value * 10.0f);
+    case SPORT_ENCODE_ALT_CM:
+        return (int32_t)(value * 100.0f);
+    case SPORT_ENCODE_SPEED_KNOTS_X1000:
+        /* m/s -> knots*1000: 1 m/s = 1.943844 knots, same conversion
+           constant smartport.c's own cm/s-based comment uses, rescaled
+           here since gps.c's own TELEM_FIELD_GPS_SPEED is m/s, not
+           cm/s. */
+        return (int32_t)(value * 1943.844f);
+    case SPORT_ENCODE_GPS_LAT:
+        return (int32_t)sport_encode_gps_coord(value, false);
+    case SPORT_ENCODE_GPS_LON:
+        return (int32_t)sport_encode_gps_coord(value, true);
+    case SPORT_ENCODE_RAW:
+    default:
+        return (int32_t)value;
+    }
+}
 
 #define SPORT_START_STOP 0x7E
 #define SPORT_DLE 0x7D
@@ -205,9 +309,9 @@ static void sport_task(void *arg) {
                    about a field's value would be (baro.h's own comment
                    on this same discipline). */
                 if (entry.status != TELEM_STATUS_FAILED) {
+                    int32_t const wireValue = sport_encode_value(sport_fields[fieldIndex].encode, entry.value);
                     uint8_t frame[SPORT_MAX_STUFFED_BYTES];
-                    uint8_t const length =
-                        sport_build_data_frame(frame, sport_fields[fieldIndex].dataId, (int32_t)entry.value);
+                    uint8_t const length = sport_build_data_frame(frame, sport_fields[fieldIndex].dataId, wireValue);
                     board_sport_uart_write(frame, length);
                 }
             }

@@ -131,6 +131,20 @@ static const char *telemetry_field_name(TelemetryField field) {
             return "baro_pa";
         case TELEM_FIELD_BARO_TEMPERATURE:
             return "baro_degc";
+        case TELEM_FIELD_BATTERY_VOLTAGE:
+            return "batt_v";
+        case TELEM_FIELD_BATTERY_CURRENT:
+            return "batt_a";
+        case TELEM_FIELD_GPS_LATITUDE:
+            return "gps_lat";
+        case TELEM_FIELD_GPS_LONGITUDE:
+            return "gps_lon";
+        case TELEM_FIELD_GPS_ALTITUDE:
+            return "gps_alt_m";
+        case TELEM_FIELD_GPS_SPEED:
+            return "gps_speed_mps";
+        case TELEM_FIELD_GPS_SATELLITES:
+            return "gps_sats";
         case TELEM_FIELD_COUNT:
             break;
     }

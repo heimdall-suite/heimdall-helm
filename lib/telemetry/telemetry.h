@@ -43,6 +43,28 @@ typedef enum {
     TELEM_FIELD_BARO_PRESSURE,    /* station pressure, Pa */
     TELEM_FIELD_BARO_TEMPERATURE, /* chip's own die temperature, deg C */
 
+    /* Issue #41 -- real values, pulled from lib/sensors/battery.h's
+       battery_get_latest() (#24), only on boards with
+       HELM_HAS_BATTERY_SENSE set. Same never-fabricate-a-value
+       discipline as baro's fields above. */
+    TELEM_FIELD_BATTERY_VOLTAGE, /* pack voltage, volts */
+    TELEM_FIELD_BATTERY_CURRENT, /* pack current, amps */
+
+    /* Issue #41 -- real values, pulled from lib/sensors/gps.h's
+       gps_get_latest() (#40), only on boards with HELM_HAS_GPS set.
+       FAILED (not stale/zeroed) whenever the module is unpowered/
+       unplugged or hasn't resolved a fix yet -- gps.c's own
+       never-fabricate-a-value discipline propagates straight through
+       here, same sensor_status_to_telemetry_status() mapping baro
+       already uses. */
+    TELEM_FIELD_GPS_LATITUDE,   /* decimal degrees, +N/-S */
+    TELEM_FIELD_GPS_LONGITUDE,  /* decimal degrees, +E/-W */
+    TELEM_FIELD_GPS_ALTITUDE,   /* MSL altitude, meters */
+    TELEM_FIELD_GPS_SPEED,      /* ground speed, m/s */
+    TELEM_FIELD_GPS_SATELLITES, /* satellites used in fix -- CLI diag only, no
+                                    native S.Port slot exists for this (sport.c's
+                                    own comment), not sent over the air */
+
     TELEM_FIELD_COUNT,
 } TelemetryField;
 
