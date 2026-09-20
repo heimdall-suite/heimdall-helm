@@ -33,21 +33,29 @@ static void control_task(void *arg) {
         memcpy(out.channels, in.channels, sizeof(out.channels));
         out.status = in.status;
 
-        if (in.pitchMode == PITCH_MODE_OFF) {
-            /* control-loops.md: "A loop in Off mode produces no output."
-               No failsafe-awareness needed here -- mapping.c already
-               forces PitchMode to Off during failsafe (control.h's own
-               comment). */
-            out.pitchActive = false;
-            out.pitchOutput = 0; /* meaningless while inactive; zeroed, not left garbage, before it goes out over the queue */
-        } else {
-            /* Placeholder body (issue #35) -- straight passthrough of
-               the mapped target, not real PID/attitude math (a later
-               issue, once control-loops.md's own rate/fusion questions
-               are resolved). */
-            out.pitchActive = true;
-            out.pitchOutput = in.pitchTarget;
-        }
+        /* Issue #38: Off produces no *correction*, but the mapped raw
+           target still flows through to output mapping's own endpoint/
+           subtrim/direction calibration -- same placeholder body
+           (straight passthrough of pitchTarget, not real PID/attitude
+           math, see #35) regardless of mode, since there's no actual
+           control law yet to turn off. pitchActive only ever goes false
+           for a genuine RX failsafe, which mapping.c already handles by
+           forcing pitchTarget to its own safe centered setpoint before
+           this stage ever sees it (mapping.c's own comment) -- so this
+           stage needs zero failsafe-awareness of its own, same reasoning
+           the old code already relied on, just no longer gated on mode.
+           control-loops.md's "Off produces no output" line has been
+           updated to match: no *correction*, not "no output at all".
+
+           pitchActive tracks RX status, NOT pitchMode -- mirrors
+           output.c's own passthrough slots (sourceValid = mapping.status
+           == RX_STATUS_OK). Needed so a genuine RX failsafe still goes
+           false here and falls through to output.c's configured
+           failsafe policy (HOLD/FIXED) for the pitch slot, exactly as
+           before this issue -- only Off-vs-Active stopped mattering,
+           OK-vs-FAILSAFE still does. */
+        out.pitchActive = (in.status == RX_STATUS_OK);
+        out.pitchOutput = in.pitchTarget;
 
         xQueueOverwrite(control_queue, &out);
         supervisor_kick(handle);

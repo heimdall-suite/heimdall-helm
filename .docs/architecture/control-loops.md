@@ -8,7 +8,13 @@ its own mode + target inputs from [receiver-to-servo.md](receiver-to-servo.md)'s
 function/input mapping stage, plus sensor data (see
 [sensors.md](sensors.md)). Only channels mapped to a mode/target function
 reach a control loop at all — passthrough channels never touch one. A
-loop in `Off` mode produces no output.
+loop in `Off` mode produces no *correction* — the mapped raw target still
+flows through to output mapping's own endpoint/subtrim/direction
+calibration (#37, #38), same as a passthrough channel would, just with
+zero control-law contribution on top. This is deliberately different
+from a genuine receiver failsafe (which still freezes/substitutes at the
+output stage, per `receiver-to-servo.md`'s "Failsafe" section) — "off"
+and "failsafe" stay two distinct states, not aliases of each other.
 
 **Mode transitions start clean, no bumpless transfer.** Settling time on
 entering a mode is expected to be a few tenths of a second, which is an
