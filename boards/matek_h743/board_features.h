@@ -75,6 +75,33 @@
 #define HELM_RX_DEFAULT_PROTOCOL_SBUS 1
 #define HELM_RX_DEFAULT_PROTOCOL_CRSF 0
 
+/* HELM_HAS_PORT_<X>_UART / HELM_HAS_PORT_<X>_I2C: per-port hardware-
+   capability facts (issue #53), one pair per port letter established by
+   #52's sourced audit (.docs/hardware.md's port inventory /
+   .docs/architecture/ports.md) -- does this port physically exist and
+   what transport(s) can it carry, nothing about what's plugged into it or
+   what role currently claims it. A different, more general kind of fact
+   than HELM_HAS_SBUS_UART/HELM_HAS_SPORT_UART below, which track a
+   specific *role* being wired and bench-confirmed on a specific port --
+   both categories coexist deliberately, see ports.md for why HELM_HAS_GPS's
+   old design conflated them. All 9 of this board's ports (7 UART + 2 I2C,
+   letters A-I) are sourced and confirmed present -- see hardware.md's own
+   table for each port's pins/silk label. */
+#define HELM_HAS_PORT_A_UART 1 /* UART1, PA9/PA10, silk `TX1 RX1` */
+#define HELM_HAS_PORT_B_UART 1 /* UART2, PD5/PD6, silk `TX2 RX2` */
+#define HELM_HAS_PORT_C_UART 1 /* UART3, PD8/PD9, silk `TX3 RX3` -- where
+                                   HELM_HAS_GPS's board_gps_uart_init() lives
+                                   today (#40) */
+#define HELM_HAS_PORT_D_UART 1 /* UART4, PB9/PB8, silk `TX4 RX4` */
+#define HELM_HAS_PORT_E_UART 1 /* UART6, PC6/PC7, silk `TX6 RX6` -- where
+                                   HELM_HAS_SBUS_UART below is wired today (#8) */
+#define HELM_HAS_PORT_F_UART 1 /* UART7, PE7/PE8, silk `RX7 TX7` -- where
+                                   HELM_HAS_SPORT_UART below is wired today (#18) */
+#define HELM_HAS_PORT_G_UART 1 /* UART8, PE1/PE0, silk `TX8 RX8` */
+#define HELM_HAS_PORT_H_I2C 1  /* I2C1, PB6/PB7, silk `CL1 DA1` */
+#define HELM_HAS_PORT_I_I2C 1  /* I2C2, PB10/PB11, silk `CL2 DA2` -- onboard,
+                                   carries HELM_HAS_BARO's DPS310 */
+
 /* HELM_HAS_SBUS_UART: this board's real SBUS UART wiring
    (board_sbus_uart_init()/board_sbus_uart_take_frame() in board.c/board.h)
    is implemented and bench-confirmed -- USART6/PC7 ("RX6" silk), see

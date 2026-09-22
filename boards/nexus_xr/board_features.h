@@ -42,6 +42,36 @@
 #define HELM_RX_DEFAULT_PROTOCOL_SBUS 0
 #define HELM_RX_DEFAULT_PROTOCOL_CRSF 1
 
+/* HELM_HAS_PORT_<X>_UART / HELM_HAS_PORT_<X>_I2C: per-port hardware-
+   capability facts (issue #53), same category as matek_h743's own block of
+   these -- see that file's comment for the full rationale. Sourced from
+   INAV's own NEXUSX pinout doc, same as #52's audit (.docs/hardware.md) --
+   but held at 0 here anyway, same policy as every other flag in this file:
+   no board on the bench yet, don't trust a documented pinout over real
+   hardware for a target that still `#error`s in board.c. Flip these once
+   real hardware exists to bench-confirm against, not before. */
+#define HELM_HAS_PORT_A_UART 0 /* UART4 */
+#define HELM_HAS_PORT_B_UART 0 /* UART6 */
+#define HELM_HAS_PORT_C_UART 0 /* UART3, alternate-function with I2C2 below (#52) */
+#define HELM_HAS_PORT_C_I2C 0  /* I2C2, alternate-function with UART3 above --
+                                   genuinely exclusive, needs a `.mode` field (#54) */
+#define HELM_HAS_PORT_D_UART 0 /* UART1, AUX/SBUS header pins, 3-way
+                                   alternate-function (servo/UART1/I2C1, #52).
+                                   Only 2 of the 3 states are flagged here --
+                                   might add `HELM_HAS_PORT_D_PWM` in the
+                                   future to support servo output, once the
+                                   output-mapping system and this port's claim
+                                   state have a way to arbitrate which one
+                                   wins (still an open design question, see
+                                   hardware.md's "Open items") */
+#define HELM_HAS_PORT_D_I2C 0  /* I2C1, same AUX/SBUS header pins as above --
+                                   same 3-way alternate-function, see the PWM
+                                   note above */
+#define HELM_HAS_PORT_E_UART 0 /* UART5, onboard, wired to the built-in
+                                   dual-SX1281 ExpressLRS receiver -- not
+                                   exposed to any connector, not a claimable
+                                   port (ports.md's `source = onboard` case) */
+
 /* HELM_HAS_SBUS_UART: no hardware on the bench at all, and this board
    defaults to CRSF anyway -- see afroflight32/board_features.h's own
    comment on what this flag gates. */
