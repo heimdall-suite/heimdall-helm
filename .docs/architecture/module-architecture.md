@@ -119,7 +119,11 @@ on `nexus_xr` (STM32F7, still blocked on its hardware `#error`) —
 Input needs to support both SBUS and CRSF, runtime-selectable via a
 persisted parameter (`HELM_FEATURE_PARAMS_PERSIST`, on for both real
 boards as of #32; the persisted pick itself is #10's `PARAM_INPUT_MODE`,
-`lib/params/params.c`). This is a different selection problem than
+`lib/params/params.c`). This is the direct precedent
+[ports.md](ports.md)'s subsystem-owns-port-and-protocol model generalizes
+from — every subsystem (`input`, `telemetry`, `gps`, `mag`, ...) gets the
+same shape `rx_start()` already uses here, not just RX. This is a
+different selection problem than
 [lib/README.md](../../lib/README.md)'s existing chip-selection template,
 worth calling out explicitly:
 

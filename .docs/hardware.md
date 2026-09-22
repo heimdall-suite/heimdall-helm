@@ -69,6 +69,68 @@ pin map — `boards/nexus_xr/board.c` deliberately refuses to guess (see
 that file). Don't fill in real values without real hardware or a real
 schematic to confirm against.
 
+## Port inventory
+
+Per-board UART/I2C peripheral inventory backing the peripheral-routing
+architecture ([.docs/architecture/ports.md](architecture/ports.md),
+issues [#52](https://github.com/heimdall-suite/heimdall-helm/issues/52)-[#57](https://github.com/heimdall-suite/heimdall-helm/issues/57)).
+Each port gets a uniform `Port <letter>` name, one letter space per board.
+`afroflight32` isn't covered yet — no port-flexibility need has come up
+for it; a follow-up audit if one does.
+
+### nexus_xr
+
+Sourced from [INAV's NEXUSX pinout doc](https://github.com/iNavFlight/inav/blob/master/docs/boards/NEXUSX.md).
+⚠️ that doc itself flags that Radiomaster's own site has RX/TX swapped in
+its A/B/C pin-order listing — INAV's corrected version is the one to trust.
+
+| Port | Peripheral | Transport | Notes |
+|---|---|---|---|
+| A | UART4 | UART only | Free, generic candidate |
+| B | UART6 | UART only | Free, generic candidate |
+| C | UART3 *or* I2C2 | Alternate-function, genuinely exclusive (shared pins) | Needs a `.mode` field once params land (#54) |
+| — | UART1 *or* I2C1 (AUX/SBUS header pins) | Same alternate-function shape as Port C | Not one of the three silk-labeled connectors, needs its own name; UART1 may already be claimed for RX depending on configuration — resolve, don't assume |
+
+### matek_h743
+
+Sourced from [Matek's H743-WLITE product page](https://www.mateksys.com/?portfolio=h743-wlite#tab-id-5)
+(manufacturer silkscreen, the primary source Betaflight's/INAV's own
+target configs are themselves written against), cross-checked against
+INAV's [`MATEKH743/target.h`](https://github.com/iNavFlight/inav/blob/master/src/main/target/MATEKH743/target.h).
+Independently cross-validates the three UARTs already wired — GPS UART3
+PD8/PD9 (#40), SBUS UART6 PC7 (#8), S.Port UART7 PE8 (#18) all match —
+and resolves the `HELM_HAS_BARO` "verify wiring" TODO: I2C2/PB10-PB11 is
+that bus. 7 UARTs + 2 I2C buses, one uniform letter space (A–I); I2C buses
+get their own letters rather than folding into the UART lettering, since
+their pins don't share a connector with any lettered UART on this board.
+
+| Port | Peripheral | Pins | Matek's suggested use (not silkscreen) | Notes |
+|---|---|---|---|---|
+| A | UART1 | PA9/PA10 | "Telemetry 2" | Telemetry-stage candidate, not a Sensors-box port |
+| B | UART2 | PD5/PD6 | "GPS1" | Real second GPS-capable port |
+| C | UART3 | PD8/PD9 | "GPS2" | Today's default (#40) |
+| D | UART4 | PB9/PB8 | "USER" | Free, generic candidate |
+| E | UART6 | PC6/PC7 | 3 alternative modes (see below) | Input-stage (SBUS today) |
+| F | UART7 | PE7/PE8 | "Telemetry 1" | Telemetry-stage (S.Port today) |
+| G | UART8 | PE1/PE0 | "USER" | Free, generic candidate |
+| H | I2C1 | PB6/PB7 | "Compass, OLED" | Candidate for mag (#57) — matches INAV's own mag wiring on this board |
+| I | I2C2 | PB10/PB11 | "Onboard Barometer DPS310" | Onboard, matches `HELM_HAS_BARO`, not a port candidate |
+
+Port E (UART6) is directly confirmed (manufacturer table) to have three
+alternative single-protocol modes, not independently-combinable pin
+assignments: `TX6 & RX6 → CRSF` (two-wire, one coherent full-duplex
+config), `RX6 alone → SBUS/IBUS/DSM/PPM` (TX6 idle), `TX6 alone →
+FPORT/SRXL2` (half-duplex single-pin). Plain S.Port is never listed as a
+UART6 option — FPort is Matek's actual designed substitute (S.Port's own
+telemetry payload, multiplexed onto one wire with SBUS-equivalent channel
+data), not a different protocol. Deliberately out of scope for the core
+routing architecture regardless ([ports.md](architecture/ports.md)'s own
+scope note) — `matek_h743` keeps SBUS on Port E and S.Port on Port F, two
+always-separate ports. Also surfaced but out of scope: `CAN1` (PD0/PD1).
+
+"Suggested use" (GPS1/GPS2/USER/telem1/telem2) is Matek's documentation's
+wording, not silkscreen — the physical pads are labeled `TX2`/`RX2` etc.
+
 ## Toolchain (decided)
 
 PlatformIO, `framework = stm32cube` (raw HAL/LL, no Arduino) + FreeRTOS

@@ -30,6 +30,7 @@ flowchart LR
 | [receiver-to-servo.md](receiver-to-servo.md) | RX input, function/input mapping, failsafe, output mapping, servo driver |
 | [control-loops.md](control-loops.md) | Per-axis control loops, mode transitions, timing/rate constraints |
 | [sensors.md](sensors.md) | Sensor driver model, onboard vs. peripheral, hard-required vs. optional |
+| [ports.md](ports.md) | Peripheral port/protocol/source routing — replaces the old `HELM_HAS_GPS`-style board flag, covers GPS/mag/input/telemetry and future telemetry bridges |
 | [telemetry.md](telemetry.md) | Reporting state back to the pilot's radio — S.Port real on `matek_h743`, CRSF still a stub everywhere |
 | [logging.md](logging.md) | Stub — blackbox/logging, not started |
 

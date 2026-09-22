@@ -28,22 +28,28 @@ every individual raw sample, matching `aoa-boat-controller`'s own
 blackbox precedent (a fixed sampling rate, not raw capture).
 
 **Onboard vs. peripheral** — two different presence models, not just a
-labeling difference:
+labeling difference. An earlier version of this section described
+`HELM_HAS_GPS` as the correct shape for a peripheral sensor; it wasn't —
+see [ports.md](ports.md) for the full corrected model and why. Summary:
 - **Onboard** (e.g. the board's own IMU/baro): presence is a *compile-time*
-  fact — `board.c` always wires it up for that board type. This is what
-  `board_features.h`'s `HELM_HAS_*` flags already model.
-- **Peripheral** (e.g. an external compass on a free bus): presence is a
-  *runtime* fact — the same board could have one attached or not. This
-  wants boot-time detection (probe an address/`WHO_AM_I`, mark present or
-  absent), not a board-level compile-time flag. `lib/sensors/gps.c`
-  (`matek_h743`, issue #40) is the first real driver built against this
-  model: `HELM_HAS_GPS` only tracks that a UART is wired to a GPS header,
-  not that a module is actually plugged in and powered, since the GPS
-  needs external power the user connects on demand — `gps_get_latest()`
-  reports `SENSOR_STATUS_FAILED` for as long as nothing answers, same as
-  any other absent peripheral would. A magnetometer would be the second
-  (issue #48, `matek_h743` only) — never an onboard chip, always an
-  external compass module, same presence model as GPS.
+  fact, true only where there's *never* a real reason to choose
+  differently — `board.c` always wires it up for that board type. This is
+  what `board_features.h`'s `HELM_HAS_*` flags model, unchanged.
+- **Peripheral** (e.g. GPS, an external compass): presence and wiring are
+  *runtime* facts — the same board could have one attached to any of
+  several candidate ports, or not at all. Each peripheral-hosted sensor is
+  its own subsystem owning `<subsystem>.port`/`.protocol`/`.source`
+  params ([ports.md](ports.md)) rather than a single board-level compile
+  flag. `lib/sensors/gps.c` (`matek_h743`, issue #40) is the first real
+  driver here, being refactored onto the corrected model by issue #56;
+  `lib/sensors/mag.c` (issue #57, supersedes the placeholder scope of the
+  old #48) is the second, and specifically demonstrates that "onboard vs.
+  peripheral" isn't fixed per sensor *type* — a magnetometer can
+  legitimately be onboard on one board and peripheral on another, unlike
+  IMU/baro which are never anything but onboard. Hot-plug absence
+  (nothing physically connected) and "no port assigned" collapse into the
+  same case either way: `gps_get_latest()` reports `SENSOR_STATUS_FAILED`
+  for as long as nothing answers, never a fabricated last-known value.
 
 **Hard-required vs. optional/soft-dependency** — a third status tier
 beyond a driver's own `OK`/`STALE`/`FAILED`. Example: the IMU is
