@@ -10,6 +10,7 @@
 #include "diag.h"
 #include "shell.h"
 #include "usb_cdc.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,14 +70,69 @@ static void cmd_dfu(const char *args) {
    diagnostic (see .docs/cli.md's "Adding a command" section), so it
    lives here directly rather than as a lib/diag subcommand. Only
    PARAM_TYPE_U32 exists today (params.h) -- the %lu formatting/strtoul
-   parsing below is correct only for that type; a second ParamType would
-   need real per-type dispatch here, not just a wider printf. */
+   parsing below is correct for every param except the 4 `.port` fields
+   issue #54 added, which this file special-cases by ParamId (letter
+   encoding, param_id_is_port_field() below) rather than by a second
+   ParamType -- see params.h's own PARAM_PORT_UNSET comment for why the
+   store itself still only ever sees a raw index. A real second
+   ParamType would still need proper per-type dispatch here, not just a
+   wider printf. */
 static void param_print_value(ParamId id) {
     uint32_t value = 0;
     param_get_u32(id, &value); /* id always in range here -- every call site below already checked */
     char line[80];
+
+    /* Issue #54 -- `.port` fields print as a letter (or "none" for
+       PARAM_PORT_UNSET), not a raw index -- params.h's own comment on
+       PARAM_PORT_UNSET explains why this store keeps the raw index and
+       leaves letter<->index translation to this layer. Every other
+       param, including this same subsystem's own `.protocol`/`.source`,
+       stays plain decimal, same as before this issue. */
+    if (param_id_is_port_field(id)) {
+        if (value == PARAM_PORT_UNSET) {
+            snprintf(line, sizeof(line), "%s = none\r\n", g_paramDefs[id].name);
+        } else {
+            snprintf(line, sizeof(line), "%s = %c\r\n", g_paramDefs[id].name, (char)('a' + value));
+        }
+        shell_print(line);
+        return;
+    }
+
     snprintf(line, sizeof(line), "%s = %lu\r\n", g_paramDefs[id].name, (unsigned long)value);
     shell_print(line);
+}
+
+/* Which physical transport a `.port` field needs (params.h's own
+   ParamPortTransport comment explains why the store itself doesn't
+   derive this from `.protocol`). A real hardware fact, not a param-store
+   concern: mag is this project's one I2C-based subsystem (matek_h743's
+   Port H, afroflight32's Port B -- both I2C compass buses,
+   .docs/hardware.md); gps/input/telemetry are all serial protocols
+   (NMEA/UBX, SBUS/CRSF, S.Port/CRSF) over a UART, same as every port
+   they claim on real hardware today. Whichever driver (#55-57)
+   eventually calls param_set_port() directly instead of going through
+   this CLI owns this same fact itself at that point -- it doesn't move
+   into lib/params/. */
+static ParamPortTransport param_port_field_transport(ParamId id) {
+    return id == PARAM_MAG_PORT ? PARAM_PORT_TRANSPORT_I2C : PARAM_PORT_TRANSPORT_UART;
+}
+
+/* Parses a `.port` field's CLI value: a single letter (a-i, case-
+   insensitive) or the literal "none" to clear the claim
+   (PARAM_PORT_UNSET) -- issue #54's own Encoding section calls for
+   human-readable letters, not a raw index, on the input side too.
+   Returns false (outValue unchanged) on anything else -- multi-
+   character strings, digits, punctuation. */
+static bool param_parse_port_value(char const *str, uint32_t *outValue) {
+    if (strcmp(str, "none") == 0) {
+        *outValue = PARAM_PORT_UNSET;
+        return true;
+    }
+    if (strlen(str) == 1 && isalpha((unsigned char)str[0])) {
+        *outValue = (uint32_t)(tolower((unsigned char)str[0]) - 'a');
+        return true;
+    }
+    return false;
 }
 
 static void cmd_param(const char *args) {
@@ -114,6 +170,31 @@ static void cmd_param(const char *args) {
             shell_print("no such param\r\n");
             return;
         }
+
+        /* Issue #54 -- `.port` fields go through the validated setter
+           (board-existence + collision checks, params.h's own
+           param_set_port() comment), not the plain param_set_u32() every
+           other param here still uses. */
+        if (param_id_is_port_field((ParamId)id)) {
+            uint32_t portValue = 0;
+            if (!param_parse_port_value(valueStr, &portValue)) {
+                shell_print("invalid port value -- expected a letter (a-i) or \"none\"\r\n");
+                return;
+            }
+
+            ParamPortTransport const transport = param_port_field_transport((ParamId)id);
+            if (portValue != PARAM_PORT_UNSET && !param_port_exists((uint8_t)portValue, transport)) {
+                shell_print("no such port on this board\r\n");
+                return;
+            }
+            if (!param_set_port((ParamId)id, (uint8_t)portValue, transport)) {
+                shell_print("FAILED -- already claimed by another subsystem, or flash write error\r\n");
+                return;
+            }
+            param_print_value((ParamId)id);
+            return;
+        }
+
         uint32_t const value = (uint32_t)strtoul(valueStr, NULL, 0);
         if (!param_set_u32((ParamId)id, value)) {
             shell_print("FAILED to persist -- flash write error, value NOT saved\r\n");

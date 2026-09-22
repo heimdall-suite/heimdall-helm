@@ -60,13 +60,48 @@ typedef enum {
     PARAM_INPUT_MODE,       /* issue #10 -- lib/rx/rx.c's runtime protocol pick,
                                 RX_INPUT_MODE_SBUS/_CRSF (rx.h). First real
                                 consumer of this store; test_counter above stays
-                                for now (see its own comment). */
+                                for now (see its own comment). Deliberately NOT
+                                replaced by PARAM_INPUT_PROTOCOL below -- issue
+                                #54 only builds the generic port/protocol/source
+                                mechanism, rx.c doesn't adopt it yet (that's
+                                #55/#56/#57's job), so this stays the one rx.c
+                                actually reads until then. The two will disagree
+                                if someone sets input.protocol without also
+                                updating this -- expected, temporary, not a bug. */
     PARAM_SERVO_RATE,       /* issue #31 -- lib/servo/servo.c's PWM frame rate,
                                 one setting for every output slot (period is a
                                 per-timer property, shared across every channel
                                 on it -- not something that can differ per slot
                                 within a timer group, let alone per board).
                                 SERVO_RATE_50HZ/_333HZ (servo.h). */
+
+    /* Issue #54 -- one .port/.protocol/.source triple per peripheral-
+       routing subsystem (.docs/architecture/ports.md), the model that
+       replaces the old one-bit-per-role HELM_HAS_GPS approach. Four real
+       subsystems, not a throwaway proof value: gps/mag/input/telemetry
+       are the ones ports.md itself names. No driver reads any of these
+       yet (#55/#56/#57's job) -- pure bookkeeping, validated through
+       param_set_port() below, proven via the CLI same as every other
+       param here. .port defaults to PARAM_PORT_UNSET and .source to
+       PARAM_PORT_SOURCE_NONE on every subsystem -- deliberately no
+       forced claim on first boot, matching ports.md's "GPS/mag: always
+       a runtime choice" stance (the exact conflation HELM_HAS_GPS got
+       wrong). .protocol's meaning is entirely up to whichever driver
+       eventually reads it (#55-57) -- this store treats it as an opaque
+       u32, no cross-param validation, same as PARAM_INPUT_MODE/
+       PARAM_SERVO_RATE above. */
+    PARAM_GPS_PORT,
+    PARAM_GPS_PROTOCOL,
+    PARAM_GPS_SOURCE,
+    PARAM_MAG_PORT,
+    PARAM_MAG_PROTOCOL,
+    PARAM_MAG_SOURCE,
+    PARAM_INPUT_PORT,
+    PARAM_INPUT_PROTOCOL,
+    PARAM_INPUT_SOURCE,
+    PARAM_TELEMETRY_PORT,
+    PARAM_TELEMETRY_PROTOCOL,
+    PARAM_TELEMETRY_SOURCE,
 
     /* Issue #39 -- first of HELM_PARAMS_MAX_OUTPUT_SLOTS *
        PARAM_OUTPUT_FIELD_COUNT contiguous per-slot-per-field params;
@@ -76,6 +111,45 @@ typedef enum {
 
     PARAM_COUNT = PARAM_OUTPUT_SLOT_BASE + (HELM_PARAMS_MAX_OUTPUT_SLOTS * PARAM_OUTPUT_FIELD_COUNT),
 } ParamId;
+
+/* Which physical transport a `<subsystem>.port` claim needs -- selects
+   whether param_set_port() checks HELM_HAS_PORT_<X>_UART or
+   HELM_HAS_PORT_<X>_I2C (#53) for the port letter being set. The caller
+   (today: the CLI's cmd_param(); eventually: whichever driver #55-57
+   adds) supplies this, not something this store derives from
+   `.protocol`'s value -- deriving it would mean this generic store
+   knowing every subsystem's own protocol-to-transport mapping, which
+   isn't a fact this store owns. */
+typedef enum {
+    PARAM_PORT_TRANSPORT_UART = 0,
+    PARAM_PORT_TRANSPORT_I2C,
+} ParamPortTransport;
+
+/* `<subsystem>.source`'s value -- see ports.md's own "Onboard fact vs.
+   runtime choice" section for the full model this mirrors. Only NONE/
+   DIRECT/ONBOARD exist today; higher values are reserved for a future
+   bridge subsystem's own index (e.g. sport_bridge, ports.md's "Telemetry
+   bridges" section) -- not built by this issue, just a reserved value
+   shape, per #54's own scope note. Whether ONBOARD is actually legal for
+   a given subsystem on a given board (HELM_HAS_MAG etc., board_features.h)
+   is NOT validated by this store -- deliberately out of scope, #54's
+   own Validation section only covers `.port`, see param_set_port(). */
+typedef enum {
+    PARAM_PORT_SOURCE_NONE = 0,   /* not configured, no active source */
+    PARAM_PORT_SOURCE_DIRECT,     /* uses this subsystem's own .port + .protocol */
+    PARAM_PORT_SOURCE_ONBOARD,    /* fixed chip, legal only where board_features.h
+                                      says it's actually there (unchecked here) */
+} ParamPortSource;
+
+/* Sentinel `.port` value meaning "this subsystem currently claims no
+   port" -- distinct from every real port index (0-8, letters A-I, the
+   largest span any of the three current boards uses). Ports are 0-based
+   letter indices (A=0, B=1, ...), not raw HELM_HAS_PORT_<X>_* bit
+   positions -- the CLI (lib/cli/cli.c) is where the letter<->index
+   translation lives, this store only ever sees/stores the index, same
+   "store a raw index, translate for display" choice #54's own Encoding
+   section called out needing a decision. */
+#define PARAM_PORT_UNSET 0xFFU
 
 /* Resolves the ParamId for output slot `slot`'s `field` -- `slot` is
    output.c's own slotConfigs[] array index (0-based), NOT the physical
@@ -131,5 +205,34 @@ bool param_set_u32(ParamId id, uint32_t value);
    CLI's `param show <name>`/`param set <name> <value>` to resolve a
    typed name into a ParamId. */
 int16_t param_find_by_name(char const *name);
+
+/* True if `id` is one of the 4 subsystems' `.port` fields above (#54) --
+   used by the CLI to decide whether a value should print/parse as a
+   letter instead of a raw decimal number. Everything else in this store
+   (including `.protocol`/`.source`, and every param that predates #54)
+   stays plain PARAM_TYPE_U32 decimal, same as today. */
+bool param_id_is_port_field(ParamId id);
+
+/* Does port letter `portIndex` (0-based, A=0) physically exist on this
+   board and support `transport` -- checks board_features.h's
+   HELM_HAS_PORT_<X>_UART/_I2C flags (#53). A board that never #defines
+   the flag for a given letter (because that letter isn't in its own
+   port inventory at all, .docs/hardware.md) is treated identically to
+   the flag being defined 0 -- both mean "doesn't exist here". */
+bool param_port_exists(uint8_t portIndex, ParamPortTransport transport);
+
+/* Sets a `<subsystem>.port` field (`portId`, one of the 12 PARAM_*_PORT
+   ids above) to `portIndex`, after #54's two required checks: (1) does
+   this port exist on this board at all for `transport`
+   (param_port_exists() above) and (2) is it already claimed -- currently
+   `.source == PARAM_PORT_SOURCE_DIRECT` -- by a DIFFERENT subsystem.
+   Rejects (returns false, nothing written/persisted) if either check
+   fails, same all-or-nothing contract as param_set_u32(); also returns
+   false if the underlying param_set_u32() call itself fails (flash write
+   error). This is the only validated setter in this store -- every other
+   param (including this same subsystem's own `.protocol`/`.source`)
+   still goes through plain param_set_u32(), unvalidated, same as before
+   this issue. */
+bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport);
 
 #endif /* HELM_PARAMS_H */
