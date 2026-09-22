@@ -106,6 +106,22 @@
 #define HELM_RX_DEFAULT_PROTOCOL_SBUS 1
 #define HELM_RX_DEFAULT_PROTOCOL_CRSF 0
 
+/* HELM_HAS_PORT_<X>_UART / HELM_HAS_PORT_<X>_I2C: per-port hardware-
+   capability facts (issue #53) -- does this port letter (.docs/hardware.md's
+   port inventory / .docs/architecture/ports.md, sourced by #52) physically
+   exist and what transport(s) can it carry. A different, more general kind
+   of fact than HELM_HAS_SBUS_UART/HELM_HAS_SPORT_UART below, which track a
+   specific *role* being wired and bench-confirmed on a specific port, not
+   just that the port itself exists -- both categories coexist
+   deliberately, see ports.md for why HELM_HAS_GPS's old design conflated
+   them. This board only has two real ports (#52's audit): USART3 and I2C1
+   have no free pins at all, and USART1 is permanently the CLI's transport
+   -- none of the three get a flag here, same as they get no port letter
+   in hardware.md. */
+#define HELM_HAS_PORT_A_UART 1 /* USART2, PA2/PA3, silk `3`/`4` */
+#define HELM_HAS_PORT_B_I2C 1  /* I2C2, PB10/PB11, silk `SDA`/`SCL` -- onboard,
+                                   carries HELM_HAS_IMU/HELM_HAS_BARO's chips */
+
 /* HELM_HAS_SBUS_UART: no confirmed SBUS UART wiring on this board yet --
    see the #8 kickoff notes (which UART/pin isn't decided here, unlike
    matek_h743's bench-confirmed USART6/PC7). Not blocking: lib/rx/sbus.c
