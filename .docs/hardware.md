@@ -75,8 +75,6 @@ Per-board UART/I2C peripheral inventory backing the peripheral-routing
 architecture ([.docs/architecture/ports.md](architecture/ports.md),
 issues [#52](https://github.com/heimdall-suite/heimdall-helm/issues/52)-[#57](https://github.com/heimdall-suite/heimdall-helm/issues/57)).
 Each port gets a uniform `Port <letter>` name, one letter space per board.
-`afroflight32` isn't covered yet — no port-flexibility need has come up
-for it; a follow-up audit if one does.
 
 ### nexus_xr
 
@@ -89,7 +87,45 @@ its A/B/C pin-order listing — INAV's corrected version is the one to trust.
 | A | UART4 | UART only | Free, generic candidate |
 | B | UART6 | UART only | Free, generic candidate |
 | C | UART3 *or* I2C2 | Alternate-function, genuinely exclusive (shared pins) | Needs a `.mode` field once params land (#54) |
-| — | UART1 *or* I2C1 (AUX/SBUS header pins) | Same alternate-function shape as Port C | Not one of the three silk-labeled connectors, needs its own name; UART1 may already be claimed for RX depending on configuration — resolve, don't assume |
+| D | UART1 *or* I2C1 *or* Servo (case labels "AUX"/"SBUS", pins PB6/PB7) | 3-way alternate-function, genuinely exclusive (shared pins) | Resolves this section's old open item (was "needs its own name... UART1 may already be claimed — resolve, don't assume", see #52) — needs a `.mode` field once params land (#54), same as Port C. See note below for why this one's a 3-way choice, not 2-way |
+| E | UART5 (PC12/PD2) | Onboard, not exposed to any connector | Hardwired to the built-in dual-SX1281 ExpressLRS receiver (XR variant only — plain `NEXUS` has no such chip); matches `HELM_RX_DEFAULT_PROTOCOL_CRSF`. Not a port candidate, same category as `matek_h743`'s onboard I2C2 baro (Port I) — this is the `input` subsystem's `source = onboard` case in `ports.md`'s model, not `direct`+`.port` |
+
+Port D resolves cleanly, not just gets a name: INAV's own "Pin
+configuration" table shows PB6/PB7 default to plain servo outputs
+(S8/S9) in every configuration where neither UART1 nor UART2 is
+explicitly turned on in INAV's ports tab, and only become UART1 TX/RX
+once that's done — nothing pre-claims them. So the old "may already be
+claimed for RX" worry doesn't hold up: this is genuinely free hardware,
+not a hidden default. The same doc's "Hardware layout" table confirms
+PB6/PB7 double as I2C1 SCL/SDA too, matching Port C's shared-pins shape —
+except here servo output is a real third mode, not just UART-or-I2C, so
+whatever eventually reads `.mode` for this port needs a third case Port
+C doesn't have. Worth flagging for whoever designs that: unlike Ports
+A-C, "unclaimed" here isn't just "idle" — it's actively a servo output
+pin pair (S8/S9) by this board's own default wiring, so the
+output-mapping/servo-count system and this port's claim state will need
+to agree on which one wins. Not decided by this issue — see "Open items"
+below.
+
+Also surfaced but out of scope, same `CAN1`/S.Port-softserial treatment
+as `matek_h743`/`afroflight32`'s callouts above: INAV's "Hardware
+layout" table separately lists PA9 (the "ESC" motor-output pin, one of
+the plain S1-S5 servo pins, never a UART candidate in the actual
+"Pin configuration" table) as *also* capable of carrying UART1 TX at the
+chip level. Real chip fact, not a usable board feature — this board's
+own pin-configuration table never exposes that option, only AUX/SBUS
+ever become UART1. Not a Port.
+
+Port E (UART5) is a straightforward onboard case, no alternate-function
+complexity — INAV's own text is direct: "It is connected to the main
+STM32F7 Flight Controller on UART5. None of the external connections
+route to the receiver, they are all connected to the STM32F7 Flight
+Controller." One caveat worth carrying forward: the same doc says the
+receiver "can be disabled using USER1, which controls a pinio on pin
+PC8" — that's a power/enable line for the ESP32-based receiver module,
+not a pin remux, and nothing in the source says disabling it frees
+UART5's PC12/PD2 pins for any other use. Don't assume it does without a
+real source saying so.
 
 ### matek_h743
 
@@ -103,18 +139,23 @@ and resolves the `HELM_HAS_BARO` "verify wiring" TODO: I2C2/PB10-PB11 is
 that bus. 7 UARTs + 2 I2C buses, one uniform letter space (A–I); I2C buses
 get their own letters rather than folding into the UART lettering, since
 their pins don't share a connector with any lettered UART on this board.
+Silk labels below come from that same product page's pad-name column
+("TX1 RX1", "TX2 RX2", etc.), cross-validated by appearing identically in
+both its "INAV mapping" (`#tab-id-5`) and "ArduPilot mapping" (`#tab-id-6`)
+tables — the same pad names under two unrelated firmware projects' own
+port-role conventions, not something either one invented.
 
-| Port | Peripheral | Pins | Matek's suggested use (not silkscreen) | Notes |
-|---|---|---|---|---|
-| A | UART1 | PA9/PA10 | "Telemetry 2" | Telemetry-stage candidate, not a Sensors-box port |
-| B | UART2 | PD5/PD6 | "GPS1" | Real second GPS-capable port |
-| C | UART3 | PD8/PD9 | "GPS2" | Today's default (#40) |
-| D | UART4 | PB9/PB8 | "USER" | Free, generic candidate |
-| E | UART6 | PC6/PC7 | 3 alternative modes (see below) | Input-stage (SBUS today) |
-| F | UART7 | PE7/PE8 | "Telemetry 1" | Telemetry-stage (S.Port today) |
-| G | UART8 | PE1/PE0 | "USER" | Free, generic candidate |
-| H | I2C1 | PB6/PB7 | "Compass, OLED" | Candidate for mag (#57) — matches INAV's own mag wiring on this board |
-| I | I2C2 | PB10/PB11 | "Onboard Barometer DPS310" | Onboard, matches `HELM_HAS_BARO`, not a port candidate |
+| Port | Peripheral | Pins | Silk label | Matek's suggested use (not silkscreen) | Notes |
+|---|---|---|---|---|---|
+| A | UART1 | PA9/PA10 | `TX1 RX1` | "Telemetry 2" | Telemetry-stage candidate, not a Sensors-box port |
+| B | UART2 | PD5/PD6 | `TX2 RX2` | "GPS1" | Real second GPS-capable port |
+| C | UART3 | PD8/PD9 | `TX3 RX3` | "GPS2" | Today's default (#40) |
+| D | UART4 | PB9/PB8 | `TX4 RX4` | "USER" | Free, generic candidate |
+| E | UART6 | PC6/PC7 | `TX6 RX6` | 3 alternative modes (see below) | Input-stage (SBUS today) |
+| F | UART7 | PE7/PE8 | `RX7 TX7` (product page also lists `RTS7`/`CTS7` for this UART at the chip level — not confirmed exposed on this board's own connector) | "Telemetry 1" | Telemetry-stage (S.Port today) |
+| G | UART8 | PE1/PE0 | `TX8 RX8` | "USER" | Free, generic candidate |
+| H | I2C1 | PB6/PB7 | `CL1 DA1` | "Compass, OLED" | Candidate for mag (#57) — matches INAV's own mag wiring on this board |
+| I | I2C2 | PB10/PB11 | `CL2 DA2` (product page also notes this bus breaks out on a JST-GH-4P connector specifically, unlike the others) | "Onboard Barometer DPS310" | Onboard, matches `HELM_HAS_BARO`, not a port candidate |
 
 Port E (UART6) is directly confirmed (manufacturer table) to have three
 alternative single-protocol modes, not independently-combinable pin
@@ -130,6 +171,56 @@ always-separate ports. Also surfaced but out of scope: `CAN1` (PD0/PD1).
 
 "Suggested use" (GPS1/GPS2/USER/telem1/telem2) is Matek's documentation's
 wording, not silkscreen — the physical pads are labeled `TX2`/`RX2` etc.
+
+### afroflight32
+
+Sourced from `aoa-boat-controller`'s `include/pins_naze32.h` (itself
+sourced against Cleanflight's `target.c`/`target.h`/`hardware_revision.c`
+and the Naze32 Rev6 owner's manual, per that file's own header comment) —
+the same board family already backing this project's
+`board.c`/`board_features.h`. Only 2 of this chip's 3 USARTs
+are usable at all: USART3's default pins (PB10/PB11) collide with I2C2,
+which this board's onboard IMU/baro bus already claims
+(`board_i2c2_init()`) — the same reason Cleanflight's own NAZE target
+never enables USART3 either. I2C1's pins are likewise fully claimed on
+this board: both its default location (PB6/PB7) and its remap
+alternative (PB8/PB9, per the STM32F103 reference manual RM0008's AFIO
+remap table — a chip-level fact, not board-specific) land squarely on
+this board's OUT3-OUT6 servo outputs (`pins_naze32.h`'s
+`PIN_PWM_OUT_ROLL`/`PIN_PWM_OUT_S4`/`PIN_PWM_OUT_S5`/`PIN_PWM_OUT_S6` =
+PB6/PB7/PB8/PB9). Neither USART3 nor I2C1 gets a port letter — no free
+pins to route anything to.
+
+USART1 (PA9/PA10) doesn't get a port letter either, same treatment —
+it's the CLI's transport, over the onboard USB-serial converter, and
+that's the only thing it will ever be. Confirmed by `aoa-boat-controller`'s
+own investigation into reallocating this exact UART (`decisions.md`,
+explored for S.Port, ultimately superseded): RX (PA10) is wired only to
+the onboard USB-serial bridge chip and isn't broken out anywhere else on
+the board, so no external peripheral's TX could ever be plugged in
+regardless of what params say. The one accessory-header pad labeled
+"UART1 TX" is the *same electrical net* as PA9 (`pinout.md`: "a second
+physical access point onto the same already-claimed UART1 net, not an
+independent third UART"), not a free alternate line — and owner-confirmed
+against the physical board to be a bare pad, not a through-hole
+connector, so it isn't practically wireable to anything even setting the
+shared-net problem aside. Reassigning this UART away from CLI in
+software would also cost the onboard USB connector *permanently* — PA9/
+PA10 are hardwired to the converter chip with no disconnect jumper, so
+there's no path back once it's given up. Flashing itself is unaffected
+regardless (the ROM bootloader's AN3155 entry, #13/#28, is silicon-level,
+not app-routing-dependent).
+
+| Port | Peripheral | Pins | Silk label | Notes |
+|---|---|---|---|---|
+| A | USART2 | PA2/PA3 | `3`/`4` — this board's R/C input header is silkscreened with plain channel numbers 1-8, not function names (`pinout.md`'s board sketch: "8-pad INPUT column... numbered 1-8"); PA2/PA3 are confirmed pads 3/4 of that header, not separately function-labeled on the silk itself | Spare UART — input-stage (SBUS today, `HELM_HAS_SBUS_UART`); inversion is a separate GPIO (PB2, Cleanflight's target.h: "abused as inverter select"), not one of USART2's own pins |
+| B | I2C2 | PB10/PB11 | `SDA`/`SCL` — the accessory header's own column, function-labeled unlike the numbered input header above (`pinout.md`'s board sketch: `SDA (PB11) \| SCL (PB10)`; the `(PBxx)` part is that doc's own annotation, `SDA`/`SCL` is the sourced silk text) | Carries the onboard IMU (MPU6500, 0x68) + baro (BMP280, 0x76) — matches `HELM_HAS_IMU`/`HELM_HAS_BARO`, no port claim needed for either (wired directly in `board_i2c2_init()`, same "never a real alternative" category `ports.md` already gives onboard chips). Unlike a UART port, though, this one *is* a real candidate on top of that: it's broken out to an actual through-hole header (GND/5V alongside SDA/SCL, confirmed against the board's own silkscreen/pinout diagram), and I2C is multi-drop by design — an external device (e.g. a mag, matching matek_h743's Port H framing) can share this exact bus at a different address with no config conflict, the way two protocols can never share one UART |
+
+Also surfaced but out of scope, same treatment as `matek_h743`'s `CAN1`
+callout: this board's S.Port telemetry runs on bit-banged software serial
+(PB0/PB1, TIM3) rather than a UART peripheral at all, since both real
+UARTs above are already spoken for — not a "Port" in this model's sense,
+no hardware USART/I2C peripheral to route.
 
 ## Toolchain (decided)
 
@@ -162,6 +253,11 @@ current milestone.
   only the tier numbers remain open
 - `nexus_xr`'s real HSE crystal value and pin map — needs real hardware or
   a real schematic, not more inference from spec sheets
+- `nexus_xr` Port D (AUX/SBUS header, PB6/PB7): unlike Ports A-C,
+  "unclaimed" here isn't idle — it's this board's own default servo
+  outputs S8/S9. Whatever implements Port D's `.mode` field (#54) needs
+  to agree with the output-mapping/servo-count system on which one wins
+  when the port has no subsystem claim; not designed yet
 - ST-Link/CubeProgrammer is not used for any target, by design — both
   real boards flash over their own ROM bootloaders instead (see
   [.docs/cli.md](cli.md)'s `dfu` command). Further real-hardware bring-up

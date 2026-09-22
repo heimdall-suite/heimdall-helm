@@ -17,6 +17,12 @@ by accident on `matek_h743` (one UART, one header) — it breaks the moment
 a board has more than one candidate port (`nexus_xr`) or more than one
 manufacturer-suggested GPS-capable header (`matek_h743` itself turns out
 to have two — see [hardware.md](../hardware.md)'s port tables).
+`afroflight32`'s port audit surfaced the same conflation from a different
+angle: its one I2C bus already carries the onboard IMU+baro, but — since
+I2C is multi-drop, unlike a UART — that's not the same fact as "this bus
+is spoken for." A future mag on the same bus at a different address is a
+real, additional possibility on hardware that a single `HELM_HAS_*` bit
+per bus couldn't have expressed either.
 
 ## Onboard fact vs. runtime choice
 
