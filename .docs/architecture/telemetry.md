@@ -1,7 +1,20 @@
 # Telemetry
 
-Status: design sketch, not yet implemented. See [README.md](README.md) for
-how this page fits with the rest of the architecture docs.
+Status: the core table/gather task and the S.Port adapter are real on
+`matek_h743` — table+gather
+([#16](https://github.com/heimdall-suite/heimdall-helm/issues/16)/[#17](https://github.com/heimdall-suite/heimdall-helm/issues/17)),
+S.Port poll-response
+([#18](https://github.com/heimdall-suite/heimdall-helm/issues/18)/[#33](https://github.com/heimdall-suite/heimdall-helm/issues/33)),
+battery/GPS fields and S.Port's Lua-push write direction pending
+bench-verification for the 2026-09-24 race
+([#41](https://github.com/heimdall-suite/heimdall-helm/issues/41)/[#42](https://github.com/heimdall-suite/heimdall-helm/issues/42)).
+`afroflight32` has the table/gather task (it compiles unconditionally)
+but no S.Port UART transport yet
+([#30](https://github.com/heimdall-suite/heimdall-helm/issues/30)), so
+nothing puts it on a wire there. CRSF is entirely unbuilt, on any board
+([#9](https://github.com/heimdall-suite/heimdall-helm/issues/9)/[#19](https://github.com/heimdall-suite/heimdall-helm/issues/19)).
+See [README.md](README.md) for how this page fits with the rest of the
+architecture docs.
 
 Telemetry is one of three independent consumers of [sensor data](sensors.md)
 (alongside the [control loop](control-loops.md) and
@@ -102,6 +115,22 @@ S.Port's round-trip budget. Precomputing into the table (rather than
 reading a live driver queue inside the poll-response path) is what keeps
 that response bounded.
 
+**Write direction, added by
+[#42](https://github.com/heimdall-suite/heimdall-helm/issues/42)
+(pending bench-verify):** a Lua script's `sportTelemetryPush()` call on
+the radio rides the bus's own reserved push physical ID
+(`SPORT_PUSH_PHYSICAL_ID`, `lib/telemetry/sport.c`), decoded by the same
+byte-at-a-time receive state machine as the poll marker. This project
+defines its own single-frame `SPORT_SET_PARAM_FRAME_ID` for "set one
+`params.h` `ParamId` to one u32 value" rather than implementing generic
+MSP-over-telemetry request/response reassembly -- deliberately narrow,
+only ever writing `output.c`'s own params-backed trim block
+(issue #39's `PARAM_OUTPUT_SLOT_BASE..PARAM_COUNT-1` range), never
+`input_mode`/`servo_rate` or anything else, regardless of what a
+malformed or unexpected frame claims. `matek_h743`-only so far; `param
+set` over the CLI is the confirmed fallback if a board doesn't have this
+wired (see [.docs/cli.md](../cli.md)).
+
 ## CRSF: scheduled push, wiring varies per board
 
 Unlike S.Port, CRSF's wiring topology is a per-board hardware fact, not
@@ -130,11 +159,19 @@ link stats often, battery rarely), gated only by "is the wire free":
 ## Not yet decided
 
 - The semantic field enum itself (which values telemetry reports at
-  all) -- grows incrementally as sensors/logging get built out.
-- Exact per-field refresh intervals and the gather task's own period.
-- CRSF's internal priority/rate schedule (which fields, how often).
-- S.Port sensor-ID assignments per field.
+  all) -- grows incrementally as sensors/logging get built out. Test,
+  baro, battery, and GPS fields exist today (`telemetry.h`); more will
+  follow as more sensors land.
+- Exact per-field refresh intervals and the gather task's own period --
+  still one fixed 100ms period for every field (`telemetry.c`).
+- CRSF's internal priority/rate schedule (which fields, how often) --
+  moot until CRSF decode itself exists (#9).
 - Naming/shape of the per-board CRSF single-vs-two-wire flag.
-- How this relates to `aoa-boat-controller`'s `aoamon.lua`-style
-  parameter/config-over-telemetry precedent -- likely ties into the
-  parameter-persistence system once that's designed, not before.
+
+Resolved since this list was last written: S.Port sensor-ID assignments
+per field are decided (`sport.c`'s `sport_fields[]`, real native FrSky
+IDs where one exists, DIY IDs otherwise -- see that file's own
+comments), and the `aoa-boat-controller` `aoamon.lua`-style
+config-over-telemetry precedent has a first real answer: S.Port's
+push/write direction (above, #42) ties directly into the
+parameter-persistence system (#32/#39), not a separate mechanism.

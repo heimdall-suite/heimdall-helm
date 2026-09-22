@@ -1,7 +1,9 @@
 # lib/
 
-Empty for now — no real modules exist yet (see repo root README's Status
-section). This is where they'll go, following one convention:
+Chip/protocol-based drivers and hardware-independent logic, shared across
+every board that needs them — see repo root README's Status section and
+[.docs/hardware.md](../.docs/hardware.md) for which subsystems are real
+today vs. still planned. The convention every subsystem here follows:
 
 ## Split by chip/protocol, not by board
 

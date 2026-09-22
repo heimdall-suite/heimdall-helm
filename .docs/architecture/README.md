@@ -1,8 +1,10 @@
 # Architecture
 
-Status: design sketch, not yet implemented — captures the intended shape
-of the firmware before any driver/control-loop code gets written. See
-repo root README's Status section for what actually exists today.
+Status: mixed — captures the intended shape of the firmware; several
+chains below are now real and bench-verified (or pending
+bench-verification, see repo root README's Status section and
+[.docs/hardware.md](../hardware.md)'s feature/board matrix for exactly
+which). Each page's own `Status:` line says how much of it exists today.
 
 This is the overview. Each major chain gets its own page, added over time
 as it gets designed — don't expect every page below to exist or be filled
@@ -28,8 +30,8 @@ flowchart LR
 | [receiver-to-servo.md](receiver-to-servo.md) | RX input, function/input mapping, failsafe, output mapping, servo driver |
 | [control-loops.md](control-loops.md) | Per-axis control loops, mode transitions, timing/rate constraints |
 | [sensors.md](sensors.md) | Sensor driver model, onboard vs. peripheral, hard-required vs. optional |
-| [telemetry.md](telemetry.md) | Stub — reporting state back to the pilot's radio |
-| [logging.md](logging.md) | Stub — blackbox/logging |
+| [telemetry.md](telemetry.md) | Reporting state back to the pilot's radio — S.Port real on `matek_h743`, CRSF still a stub everywhere |
+| [logging.md](logging.md) | Stub — blackbox/logging, not started |
 
 ## Conventions for these pages
 

@@ -31,7 +31,7 @@ on both boards, not just plumbing: real SBUS decode on matek_h743 with
 runtime SBUS/CRSF selection via a persisted param (issue #10); a
 first-pass, hardcoded function/input mapping (issue #34) and a
 placeholder no-op control loop (issue #35) feeding real output mapping
-with per-slot failsafe/reverse/endpoint calibration (issues #36/#37);
+with per-slot failsafe/reverse/endpoint trim (issues #36/#37);
 driving a real PWM servo driver with a persisted, per-boat frame-rate
 choice (50/250/333Hz), bench-verified against real hardware with an
 external USB logic analyzer, not just CLI-reported values (issue #31).

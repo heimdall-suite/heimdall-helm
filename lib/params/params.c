@@ -36,7 +36,7 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
     {"servo_rate", PARAM_TYPE_U32, 0U},
 
     /* Issue #39 -- output.c's per-slot endpoint/subtrim/reverse
-       calibration, HELM_PARAMS_MAX_OUTPUT_SLOTS (params.h) slots' worth
+       trim, HELM_PARAMS_MAX_OUTPUT_SLOTS (params.h) slots' worth
        regardless of board (see that file's own comment on why this
        isn't sized per-board). Defaults reproduce output.c's own
        pre-#39 hardcoded slotConfigs[] table exactly -- both real boards'
@@ -109,7 +109,7 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    issue #31 (adding PARAM_SERVO_RATE grows values[] again, 2->3 u32s) --
    same shape change, same reasoning, applied proactively this time
    rather than caught by a repeat of that same bug. Bumped 3->4 for issue
-   #39 (adding the 32 output-slot-calibration params grows values[] from
+   #39 (adding the 32 output-slot-trim params grows values[] from
    3 to 35 u32s) -- same shape change again, same reasoning: a record
    saved under version 3 must be discarded, not misread with 32 slot
    params reinterpreted from bytes that were never written for them. */

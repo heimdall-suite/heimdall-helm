@@ -22,7 +22,7 @@
      signal lands on.
    - direction/reverse: some physical servos are mounted such that a
      normal command drives them backwards from what's intended.
-   - endpoint/subtrim calibration (issue #37): a piecewise min/center/max
+   - endpoint/subtrim trim (issue #37): a piecewise min/center/max
      scale from whatever range a slot's source produces (the known
      RX_CHANNEL_RAW_* convention for passthrough, optionally something
      else for a function) into this slot's own physical output range --

@@ -60,7 +60,7 @@ typedef struct {
     uint16_t sourceCenter;
     uint16_t sourceMax;
 
-    /* This slot's own physical endpoint/subtrim calibration (issue #37)
+    /* This slot's own physical endpoint/subtrim trim (issue #37)
        -- always used, regardless of source. scale_slot() below maps
        sourceMin/Center/Max onto these three points as two independent
        linear segments (real RC endpoint+subtrim convention: trimming
@@ -232,49 +232,54 @@ static const OutputSlotConfig slotConfigs[HELM_SERVO_COUNT] = {
    (name/source/channelIndex/failsafePolicy/failsafeFixedValue/
    hasSourceRangeOverride/sourceMin/Center/Max) as compile-time facts --
    those are board wiring, not something a CLI/radio operator should be
-   able to change trackside, unlike physical-servo calibration (issue
-   #39's own scoping). Populated once in output_start(), before anything
-   downstream can read it (same "seed before scheduler starts" discipline
-   lastGoodValue[] itself already follows) -- resolve_slot() never reads
-   flash directly, matching every other params consumer in this
-   codebase (servo.c's own servoPeriodUs). */
+   able to change trackside, unlike a slot's physical-servo trim (issue
+   #39's own scoping) -- deliberately not called "calibration" anywhere
+   in this codebase: that word is reserved for a sensor's own
+   offset/gain fit against a reference (bmp280.c/dps310.c's factory
+   coefficients, battery.c's divider scale), a different concept from
+   mapping an already-correct input onto a servo's physical travel.
+   Populated once in output_start(), before anything downstream can read
+   it (same "seed before scheduler starts" discipline lastGoodValue[]
+   itself already follows) -- resolve_slot() never reads flash directly,
+   matching every other params consumer in this codebase (servo.c's own
+   servoPeriodUs). */
 typedef struct {
     uint16_t min;
     uint16_t center;
     uint16_t max;
     bool reversed;
-} OutputSlotCalibration;
+} OutputSlotTrim;
 
-static OutputSlotCalibration slotCalibration[HELM_SERVO_COUNT];
+static OutputSlotTrim slotTrim[HELM_SERVO_COUNT];
 
-static void load_slot_calibration(void) {
+static void load_slot_trim(void) {
     for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
 #if HELM_FEATURE_PARAMS_PERSIST
         uint32_t value;
 
         value = slotConfigs[i].outputMin;
         param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_MIN), &value);
-        slotCalibration[i].min = (uint16_t)value;
+        slotTrim[i].min = (uint16_t)value;
 
         value = slotConfigs[i].outputCenter;
         param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_CENTER), &value);
-        slotCalibration[i].center = (uint16_t)value;
+        slotTrim[i].center = (uint16_t)value;
 
         value = slotConfigs[i].outputMax;
         param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_MAX), &value);
-        slotCalibration[i].max = (uint16_t)value;
+        slotTrim[i].max = (uint16_t)value;
 
         value = slotConfigs[i].reversed ? 1U : 0U;
         param_get_u32(param_output_slot_id(i, PARAM_OUTPUT_FIELD_REVERSED), &value);
-        slotCalibration[i].reversed = (value != 0U);
+        slotTrim[i].reversed = (value != 0U);
 #else
         /* No persisted store on this board -- fall back to the
            compile-time table directly, same "compile-time-safe
            fallback" shape servo.c's own servoPeriodUs uses. */
-        slotCalibration[i].min = slotConfigs[i].outputMin;
-        slotCalibration[i].center = slotConfigs[i].outputCenter;
-        slotCalibration[i].max = slotConfigs[i].outputMax;
-        slotCalibration[i].reversed = slotConfigs[i].reversed;
+        slotTrim[i].min = slotConfigs[i].outputMin;
+        slotTrim[i].center = slotConfigs[i].outputCenter;
+        slotTrim[i].max = slotConfigs[i].outputMax;
+        slotTrim[i].reversed = slotConfigs[i].reversed;
 #endif
     }
 }
@@ -331,7 +336,7 @@ static uint16_t apply_reverse(uint16_t value, uint16_t outputMin, uint16_t outpu
 /* Resolves one slot's final output value: substitutes per its own
    failsafe policy if its source has nothing valid right now, else scales
    the raw source value through this slot's own endpoint/subtrim
-   calibration; then applies reverse if configured -- except for a FIXED
+   trim; then applies reverse if configured -- except for a FIXED
    failsafe value, which is already a literal physical position (issue
    #37) and skips scaling/reverse entirely. Also updates lastGoodValue[
    slot] with the final value actually produced, whenever the source IS
@@ -339,7 +344,7 @@ static uint16_t apply_reverse(uint16_t value, uint16_t outputMin, uint16_t outpu
    not a stale substituted one. */
 static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) {
     const OutputSlotConfig *cfg = &slotConfigs[slot];
-    const OutputSlotCalibration *cal = &slotCalibration[slot];
+    const OutputSlotTrim *trim = &slotTrim[slot];
 
     if (!sourceValid) {
         if (cfg->failsafePolicy == OUTPUT_FAILSAFE_FIXED) {
@@ -357,8 +362,8 @@ static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) 
         srcMax = cfg->sourceMax;
     }
 
-    uint16_t scaled = scale_slot(rawValue, srcMin, srcCenter, srcMax, cal->min, cal->center, cal->max);
-    uint16_t const finalValue = cal->reversed ? apply_reverse(scaled, cal->min, cal->max) : scaled;
+    uint16_t scaled = scale_slot(rawValue, srcMin, srcCenter, srcMax, trim->min, trim->center, trim->max);
+    uint16_t const finalValue = trim->reversed ? apply_reverse(scaled, trim->min, trim->max) : scaled;
 
     lastGoodValue[slot] = finalValue;
     return finalValue;
@@ -376,7 +381,7 @@ static void output_task(void *arg) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(OUTPUT_TASK_PERIOD_MS));
 
-        /* Re-read calibration from the param store every tick, not just
+        /* Re-read trim from the param store every tick, not just
            once at output_start() -- otherwise a `param set` (CLI, #39,
            or a future S.Port push, #42) would silently do nothing until
            the next reboot, defeating the entire point of making this
@@ -385,7 +390,7 @@ static void output_task(void *arg) {
            happens on a write) -- a handful of array reads every 20ms,
            same "latest value, poll don't push" philosophy every other
            stage in this chain already uses. */
-        load_slot_calibration();
+        load_slot_trim();
 
         MappingFrame mapping;
         mapping_get_latest(&mapping);
@@ -416,10 +421,10 @@ static void output_task(void *arg) {
 }
 
 void output_start(void) {
-    /* Must happen before anything below reads slotCalibration[] --
+    /* Must happen before anything below reads slotTrim[] --
        resolve_slot()'s seeding call a few lines down included (issue
        #39). */
-    load_slot_calibration();
+    load_slot_trim();
 
     output_queue = xQueueCreate(1, sizeof(OutputFrame));
 
@@ -432,7 +437,7 @@ void output_start(void) {
     OutputFrame initial = {0};
     initial.status = RX_STATUS_FAILSAFE;
     for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
-        lastGoodValue[i] = slotCalibration[i].center;
+        lastGoodValue[i] = slotTrim[i].center;
         initial.servos[i] = resolve_slot(i, false, 0);
     }
     xQueueOverwrite(output_queue, &initial);

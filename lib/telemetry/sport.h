@@ -12,7 +12,7 @@
 
    Bidirectional as of issue #42: poll-response (FC -> radio, issue #18)
    plus a push/write path (radio -> FC, Lua's sportTelemetryPush()
-   setting one output.c calibration param at a time, #39's params-backed
+   setting one output.c trim param at a time, #39's params-backed
    min/max/subtrim/reverse) -- ported from Betaflight's own real,
    production telemetry/smartport.c receive state machine, not
    aoa-boat-controller's own never-bench-verified SportSensor/

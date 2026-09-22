@@ -1,10 +1,14 @@
 # Module / task architecture
 
-Status: design sketch, not yet implemented. See [README.md](README.md) for
-how this page fits with the rest of the architecture docs. Unlike the
-other pages here, this one isn't a signal chain — it's the cross-cutting
-convention every chain (starting with [receiver-to-servo.md](receiver-to-servo.md))
-is built on top of.
+Status: implemented — module lifecycle, pull-only queues, and the
+supervisor/fault-isolation model below are real and bench-verified on
+`matek_h743` and `afroflight32` (`nexus_xr` blocked on hardware, see
+[.docs/hardware.md](../hardware.md)). Only the exact numeric priority
+tiers (see "Open / not yet decided" below) remain undecided. See
+[README.md](README.md) for how this page fits with the rest of the
+architecture docs. Unlike the other pages here, this one isn't a signal
+chain — it's the cross-cutting convention every chain (starting with
+[receiver-to-servo.md](receiver-to-servo.md)) is built on top of.
 
 ## Module lifecycle
 
@@ -98,7 +102,7 @@ and let IWDG reset the MCU. A wedged task that stops the supervisor's
 pass from running has the same effect. `board_init()` / output init are
 responsible for coming up in a safe state on reboot.
 
-Implemented on `matek_h743` (issue #5) and `afroflight32` (issue #11):
+Implemented on [![bench-verified #5](https://img.shields.io/badge/bench--verified-%235-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/5) `matek_h743` and [![bench-verified #11](https://img.shields.io/badge/bench--verified-%2311-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/11) `afroflight32`:
 `lib/supervisor/supervisor.c`'s task starts and feeds IWDG itself, gated
 on `HELM_HAS_IWDG`; the register-level init/refresh calls it makes live
 in each board's own `board.c`, same standard as every other clock/
@@ -106,8 +110,8 @@ peripheral decision in this repo — the two implementations differ in
 their prescaler/reload numbers (different nominal LSI frequency per
 chip family) despite sharing the same register shape. Both
 bench-verified via the CLI's `diag wedge` (`lib/diag/diag.c`): starving
-the supervisor and confirming the board actually resets. Not yet ported
-to `nexus_xr` (STM32F7, still blocked on its hardware `#error`) —
+the supervisor and confirming the board actually resets. ![not ported](https://img.shields.io/badge/not_ported-lightgrey)
+on `nexus_xr` (STM32F7, still blocked on its hardware `#error`) —
 `HELM_HAS_IWDG` is 0 there.
 
 ## Case study: Input (RX), dual-protocol selection

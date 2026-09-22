@@ -22,7 +22,7 @@
    split aoa-boat-controller's ConfigFlash uses on H743 (that project's
    kRegionSize), scaled down here since this store currently holds one
    test param, not that project's five real config records. */
-/* Grown 64->256 for issue #39 (output.c's per-slot calibration params --
+/* Grown 64->256 for issue #39 (output.c's per-slot trim params --
    35 total params today, needing 148 bytes; 256 keeps a multiple of
    32 -- H7's stm32h7.c backend requires that for its FLASHWORD program
    granularity, see that file's own _Static_assert -- with real headroom

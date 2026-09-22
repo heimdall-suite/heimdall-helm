@@ -1,7 +1,25 @@
 # Receiver-to-servo flow
 
-Status: design sketch, not yet implemented. See [README.md](README.md)
-for how this page fits with the rest of the architecture docs.
+Status: implemented on `matek_h743`, with mapping/output/servo (shared
+code) also running on `afroflight32`. See [README.md](README.md) for how
+this page fits with the rest of the architecture docs.
+
+| Stage | `matek_h743` | `afroflight32` | `nexus_xr` |
+|---|---|---|---|
+| Control: mode/target loop (placeholder, no real PID yet) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Mapping: function/input | [![done #34](https://img.shields.io/badge/done-%2334-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/34) | [![done #34](https://img.shields.io/badge/done-%2334-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/34) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Output: mapping (failsafe/reverse/endpoint) | [![done #36](https://img.shields.io/badge/done-%2336-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/36)&nbsp;[![done #37](https://img.shields.io/badge/done-%2337-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/37) | [![done #36](https://img.shields.io/badge/done-%2336-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/36)&nbsp;[![done #37](https://img.shields.io/badge/done-%2337-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/37) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Output: params-backed trim | [![pending verify #39](https://img.shields.io/badge/pending_verify-%2339-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | [![pending verify #39](https://img.shields.io/badge/pending_verify-%2339-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| RX: CRSF decode | [![planned #9](https://img.shields.io/badge/planned-%239-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/9) <br />(stub) | [![planned #9](https://img.shields.io/badge/planned-%239-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/9) <br />(stub) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| RX: SBUS decode | [![done #8](https://img.shields.io/badge/done-%238-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/8) | [![planned #29](https://img.shields.io/badge/planned-%2329-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/29) <br />(fixed-test-data stub today) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Servo: real PWM driver | [![done #31](https://img.shields.io/badge/done-%2331-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/31) | [![done #31](https://img.shields.io/badge/done-%2331-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/31) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+
+"Real, not just hardcoded" is a spectrum here, not a single line:
+mapping/control/output/servo all run the same shared code on both
+boards, but today's function/output tables are still first-pass
+hardcoded (proving the mechanism), not the genuinely per-boat
+configurable table this chain is meant to end up with — see repo root
+README's Status section.
 
 ```mermaid
 %%{init: {'theme': 'redux', 'look': 'neo'}}%%
@@ -180,7 +198,7 @@ Example table:
 | S4 | Roll control output |
 
 This is also where every other **physical-actuator fact** lives — not
-just failsafe substitution above, but direction and endpoint calibration
+just failsafe substitution above, but direction and endpoint trim
 too. All three share the same reasoning: they're properties of the
 physical servo itself (its mechanical travel limits, install orientation,
 horn/linkage-geometry trim), not of whatever signal happens to be

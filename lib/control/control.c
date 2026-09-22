@@ -35,7 +35,7 @@ static void control_task(void *arg) {
 
         /* Issue #38: Off produces no *correction*, but the mapped raw
            target still flows through to output mapping's own endpoint/
-           subtrim/direction calibration -- same placeholder body
+           subtrim/direction trim -- same placeholder body
            (straight passthrough of pitchTarget, not real PID/attitude
            math, see #35) regardless of mode, since there's no actual
            control law yet to turn off. pitchActive only ever goes false

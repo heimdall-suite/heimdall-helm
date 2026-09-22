@@ -41,7 +41,7 @@
    project's design past the physical ID). */
 #define SPORT_PUSH_PHYSICAL_ID 0x0D
 
-/* This project's own frameId for "set one calibration param" push
+/* This project's own frameId for "set one trim param" push
    frames -- deliberately NOT Betaflight's real MSP-over-telemetry
    frameIds (FSSP_MSPC_FRAME_SMARTPORT 0x30 / FSSP_MSPC_FRAME_FPORT 0x31
    / FSSP_MSPS_FRAME 0x32, telemetry/smartport.h), since this project
@@ -317,7 +317,7 @@ static uint32_t sportPollMatchCount;
 /* Applies one successfully-decoded, checksum-valid SPORT_SET_PARAM_
    FRAME_ID frame (sport_receive_byte() below already checked the
    frameId before calling this). Only ever writes output.c's own
-   params-backed calibration block (#39) -- PARAM_OUTPUT_SLOT_BASE
+   params-backed trim block (#39) -- PARAM_OUTPUT_SLOT_BASE
    .. PARAM_COUNT-1 -- never any other param (input_mode, servo_rate,
    ...), regardless of what valueId a malformed or unexpected frame
    claims: a stray/malicious push silently overwriting the RX protocol
@@ -326,7 +326,7 @@ static uint32_t sportPollMatchCount;
 
    No ack/reply frame sent back in this first pass (issue #42's own
    scope, matching every other placeholder-period stage in this
-   codebase's history) -- output.c's own per-tick calibration reload
+   codebase's history) -- output.c's own per-tick trim reload
    (#39 follow-up) means the servo itself visibly moving is the
    confirmation, same as a CLI `param set` today. */
 static void sport_apply_push(uint16_t valueId, uint32_t data) {

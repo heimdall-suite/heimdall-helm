@@ -22,7 +22,7 @@
    future issues build those records on top of this interface once it's
    proven. */
 
-/* Issue #39 -- output.c's per-physical-slot calibration (endpoints/
+/* Issue #39 -- output.c's per-physical-slot trim (endpoints/
    subtrim/reverse) gets a fixed-size block of this many slots' worth of
    params, regardless of which board is actually compiling. 8 = the
    larger of the two real boards' own HELM_SERVO_COUNT (matek_h743) --
