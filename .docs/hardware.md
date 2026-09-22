@@ -82,13 +82,24 @@ Sourced from [INAV's NEXUSX pinout doc](https://github.com/iNavFlight/inav/blob/
 ⚠️ that doc itself flags that Radiomaster's own site has RX/TX swapped in
 its A/B/C pin-order listing — INAV's corrected version is the one to trust.
 
+**Ports A/B/C reuse this board's own physical silkscreen letters** —
+confirmed directly against the doc's "Marking on the case" column: the
+case itself is printed "A" next to the UART4 connector, "B" next to
+UART6, "C" next to the UART3-or-I2C2 one, exactly matching the table
+below. **Ports D and E do not exist as letters on the physical board —
+they're this project's own naming, not silkscreen.** The case prints
+"AUX"/"SBUS" where Port D is, and nothing at all where Port E is (an
+internal, non-connectorized UART). Don't go looking for a "D" or "E"
+printed on a real unit; use the case's own "AUX"/"SBUS" markings or the
+peripheral name instead when working from hardware in hand.
+
 | Port | Peripheral | Transport | Notes |
 |---|---|---|---|
 | A | UART4 | UART only | Free, generic candidate |
 | B | UART6 | UART only | Free, generic candidate |
 | C | UART3 *or* I2C2 | Alternate-function, genuinely exclusive (shared pins) | Needs a `.mode` field once params land (#54) |
 | D | UART1 *or* I2C1 *or* Servo (case labels "AUX"/"SBUS", pins PB6/PB7) | 3-way alternate-function, genuinely exclusive (shared pins) | Resolves this section's old open item (was "needs its own name... UART1 may already be claimed — resolve, don't assume", see #52) — needs a `.mode` field once params land (#54), same as Port C. See note below for why this one's a 3-way choice, not 2-way |
-| E | UART5 (PC12/PD2) | Onboard, not exposed to any connector | Hardwired to the built-in dual-SX1281 ExpressLRS receiver (XR variant only — plain `NEXUS` has no such chip); matches `HELM_RX_DEFAULT_PROTOCOL_CRSF`. Not a port candidate, same category as `matek_h743`'s onboard I2C2 baro (Port I) — this is the `input` subsystem's `source = onboard` case in `ports.md`'s model, not `direct`+`.port` |
+| E | UART5 (PC12/PD2) | Onboard, not exposed to any connector — case prints "built-in ELRS" here, not "E" | Hardwired to the built-in dual-SX1281 ExpressLRS receiver (XR variant only — plain `NEXUS` has no such chip); matches `HELM_RX_DEFAULT_PROTOCOL_CRSF`. Not a port candidate, same category as `matek_h743`'s onboard I2C2 baro (Port I) — this is the `input` subsystem's `source = onboard` case in `ports.md`'s model, not `direct`+`.port` |
 
 Port D resolves cleanly, not just gets a name: INAV's own "Pin
 configuration" table shows PB6/PB7 default to plain servo outputs
