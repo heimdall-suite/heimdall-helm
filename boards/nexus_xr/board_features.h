@@ -56,9 +56,17 @@
 #define HELM_HAS_PORT_C_I2C 0  /* I2C2, alternate-function with UART3 above --
                                    genuinely exclusive, needs a `.mode` field (#54) */
 #define HELM_HAS_PORT_D_UART 0 /* UART1, AUX/SBUS header pins, 3-way
-                                   alternate-function (servo/UART1/I2C1, #52) */
+                                   alternate-function (servo/UART1/I2C1, #52).
+                                   Only 2 of the 3 states are flagged here --
+                                   might add `HELM_HAS_PORT_D_PWM` in the
+                                   future to support servo output, once the
+                                   output-mapping system and this port's claim
+                                   state have a way to arbitrate which one
+                                   wins (still an open design question, see
+                                   hardware.md's "Open items") */
 #define HELM_HAS_PORT_D_I2C 0  /* I2C1, same AUX/SBUS header pins as above --
-                                   same 3-way alternate-function */
+                                   same 3-way alternate-function, see the PWM
+                                   note above */
 #define HELM_HAS_PORT_E_UART 0 /* UART5, onboard, wired to the built-in
                                    dual-SX1281 ExpressLRS receiver -- not
                                    exposed to any connector, not a claimable
