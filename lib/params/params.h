@@ -84,19 +84,23 @@ typedef enum {
        reads it -- this store treats it as an opaque u32, no cross-param
        validation, same as PARAM_SERVO_RATE above.
 
-       gps/mag: no driver reads these yet (#56/#57's job) -- pure
-       bookkeeping. .port defaults to PARAM_PORT_UNSET and .source to
+       mag: no driver reads this yet (#57's job) -- pure bookkeeping.
+       .port defaults to PARAM_PORT_UNSET and .source to
        PARAM_PORT_SOURCE_NONE, deliberately no forced claim on first
        boot, matching ports.md's "GPS/mag: always a runtime choice"
        stance (the exact conflation HELM_HAS_GPS got wrong).
 
-       input/telemetry: issue #55 made these the real first consumers
-       (rx.c reads PARAM_INPUT_PROTOCOL, superseding PARAM_INPUT_MODE
-       above), so unlike gps/mag they get real per-board .port/.source
-       defaults (params.c) matching this board's actual wiring, not an
-       inert PARAM_PORT_UNSET/_SOURCE_NONE -- #55's "boot-identical"
-       requirement means a freshly-flashed board still claims the same
-       physical port its receiver/telemetry link already uses today. */
+       input/telemetry/gps: real first consumers, in that order --
+       issue #55 made input/telemetry real (rx.c reads
+       PARAM_INPUT_PROTOCOL, superseding PARAM_INPUT_MODE above), issue
+       #56 did the same for gps (lib/sensors/gps.c, replacing the old
+       HELM_HAS_GPS compile-time flag entirely). Unlike mag, all three
+       get real per-board .port/.source defaults (params.c) matching
+       this board's actual wiring, not an inert
+       PARAM_PORT_UNSET/_SOURCE_NONE -- the "boot-identical" requirement
+       #55/#56 both share means a freshly-flashed board still claims the
+       same physical port its receiver/telemetry/GPS link already uses
+       today. */
     PARAM_GPS_PORT,
     PARAM_GPS_PROTOCOL,
     PARAM_GPS_SOURCE,

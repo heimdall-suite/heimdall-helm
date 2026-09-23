@@ -781,12 +781,15 @@ uint16_t board_battery_adc_read_curr_raw(void) {
     return battery_adc_read_channel(ADC_CHANNEL_11); /* PC1 */
 }
 
-/* GPS UART -- USART3, PD9. See board.h's own comment on
-   board_gps_uart_init() for the pin/hot-plug provenance (issue #40).
-   Ported the "no presence check, non-blocking drain" shape from
-   aoa-boat-controller's own GpsReader, not the register-level driver
-   itself (that project uses a HardwareSerial/Arduino-core UART, not
-   applicable here). */
+/* GPS UART -- issue #56, dynamic Port B (UART2)/Port C (UART3) bind.
+   See board.h's own comment on board_gps_uart_init() for the full
+   port/protocol/source provenance. Ported the "no presence check,
+   non-blocking drain" shape from aoa-boat-controller's own GpsReader,
+   not the register-level driver itself (that project uses a
+   HardwareSerial/Arduino-core UART, not applicable here). One shared
+   ring buffer for both candidate ports -- only one is ever actually
+   initialized/has its RXNE armed at a time, so there's no concurrent-
+   writer risk between USART2_IRQHandler()/USART3_IRQHandler() below. */
 
 #define GPS_UART_RING_SIZE 128
 
@@ -794,12 +797,69 @@ static volatile uint8_t gpsRxBuf[GPS_UART_RING_SIZE];
 static volatile uint8_t gpsRxHead;
 static volatile uint8_t gpsRxTail;
 
-void board_gps_uart_init(void) {
+/* Common tail end of both ports' init -- HAL_UART_Init purely to reach a
+   correctly-configured peripheral (real baud-rate math against the
+   actual clock tree) before switching to direct register access, same
+   reasoning board_sport_uart_init() gives for its own UART7 -- no
+   HAL_UART_Receive_IT chaining, which would leave a real re-arm gap
+   between one byte's callback returning and the next RXNE getting
+   re-armed; the ISRs below have no such gap since RXNE just stays
+   permanently enabled. Priority 5 -- this project's established floor
+   for any ISR alongside FreeRTOS, same as every other peripheral ISR in
+   this file. Neither ISR touches a FreeRTOS API (unlike UART7's, which
+   notifies a task) -- gps.c polls board_gps_uart_available() from task
+   context instead, no ISR-to-task handoff needed at NMEA's low sentence
+   rate. */
+static bool gps_uart_common_init(UART_HandleTypeDef *huart, IRQn_Type irq) {
+    huart->Init.BaudRate = 115200; /* NMEA's near-universal default rate */
+    huart->Init.WordLength = UART_WORDLENGTH_8B;
+    huart->Init.StopBits = UART_STOPBITS_1;
+    huart->Init.Parity = UART_PARITY_NONE;
+    huart->Init.Mode = UART_MODE_RX;
+    huart->Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart->Init.OverSampling = UART_OVERSAMPLING_16;
+    huart->Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    huart->Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    if (HAL_UART_Init(huart) != HAL_OK) {
+        Error_Handler();
+    }
+
+    HAL_NVIC_SetPriority(irq, 5, 0);
+    HAL_NVIC_EnableIRQ(irq);
+    return true;
+}
+
+/* Port B -- UART2, PD5 (TX, unconfigured)/PD6 (RX). Matek's own
+   suggested "GPS1" use for this port (.docs/hardware.md's port
+   inventory), confirmed free against every UART/bus this board's
+   board.c already claims. */
+static bool gps_uart_init_port_b(void) {
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_USART2_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpioInit = {0};
+    gpioInit.Pin = GPIO_PIN_6;
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Pull = GPIO_PULLUP;
+    gpioInit.Speed = GPIO_SPEED_FREQ_LOW;
+    gpioInit.Alternate = GPIO_AF7_USART2;
+    HAL_GPIO_Init(GPIOD, &gpioInit);
+
+    UART_HandleTypeDef gpsUart = {0};
+    gpsUart.Instance = USART2;
+    bool const ok = gps_uart_common_init(&gpsUart, USART2_IRQn);
+    LL_USART_EnableIT_RXNE(USART2);
+    return ok;
+}
+
+/* Port C -- UART3, PD8 (TX, unconfigured)/PD9 (RX). #40's original
+   (and, until this issue, only) GPS port -- Matek's own suggested
+   "GPS2" use, still this board's gps.port default (params.c) for the
+   boot-identical requirement #56 itself calls for. */
+static bool gps_uart_init_port_c(void) {
     __HAL_RCC_GPIOD_CLK_ENABLE();
     __HAL_RCC_USART3_CLK_ENABLE();
 
-    /* PD9 only (RX) -- PD8 (USART3_TX) left unconfigured, this module
-       never transmits to the GPS module in this first pass. */
     GPIO_InitTypeDef gpioInit = {0};
     gpioInit.Pin = GPIO_PIN_9;
     gpioInit.Mode = GPIO_MODE_AF_PP;
@@ -810,36 +870,24 @@ void board_gps_uart_init(void) {
 
     UART_HandleTypeDef gpsUart = {0};
     gpsUart.Instance = USART3;
-    gpsUart.Init.BaudRate = 115200; /* NMEA's near-universal default rate */
-    gpsUart.Init.WordLength = UART_WORDLENGTH_8B;
-    gpsUart.Init.StopBits = UART_STOPBITS_1;
-    gpsUart.Init.Parity = UART_PARITY_NONE;
-    gpsUart.Init.Mode = UART_MODE_RX;
-    gpsUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    gpsUart.Init.OverSampling = UART_OVERSAMPLING_16;
-    gpsUart.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-    gpsUart.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-    /* HAL_UART_Init only, same reasoning board_sport_uart_init() gives
-       for using it purely to reach a correctly-configured peripheral
-       (real baud-rate math against the actual clock tree) before
-       switching to direct register access below -- no
-       HAL_UART_Receive_IT chaining, which would leave a real re-arm gap
-       between one byte's callback returning and the next RXNE getting
-       re-armed; this ISR (below) has no such gap since RXNE just stays
-       permanently enabled. */
-    if (HAL_UART_Init(&gpsUart) != HAL_OK) {
-        Error_Handler();
-    }
-
-    /* Priority 5 -- this project's established floor for any ISR
-       alongside FreeRTOS, same as every other peripheral ISR in this
-       file. This one never touches a FreeRTOS API (unlike UART7's,
-       which notifies a task) -- gps.c polls board_gps_uart_available()
-       from task context instead, no ISR-to-task handoff needed at
-       NMEA's low sentence rate. */
-    HAL_NVIC_SetPriority(USART3_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(USART3_IRQn);
+    bool const ok = gps_uart_common_init(&gpsUart, USART3_IRQn);
     LL_USART_EnableIT_RXNE(USART3);
+    return ok;
+}
+
+bool board_gps_uart_init(uint8_t portIndex) {
+    switch (portIndex) {
+        case 1: /* Port B */
+            return gps_uart_init_port_b();
+        case 2: /* Port C */
+            return gps_uart_init_port_c();
+        default:
+            /* Not a port this board knows how to bind GPS to -- gps.c's
+               own comment on why this must degrade gracefully (treated
+               identically to "no module plugged in"), not
+               Error_Handler(). Nothing initialized, nothing armed. */
+            return false;
+    }
 }
 
 bool board_gps_uart_available(void) {
@@ -852,20 +900,29 @@ uint8_t board_gps_uart_read_byte(void) {
     return b;
 }
 
+/* A full buffer drops the byte rather than overwriting unread data --
+   same choice board_sport_uart's own ring buffer makes; gps.c's task
+   drains this every GPS_TASK_PERIOD_MS, comfortably faster than 128
+   bytes could fill at 115200 baud's realistic NMEA sentence rate (a
+   full GGA+RMC pair is well under 128 bytes). Shared by both ports
+   below -- see this section's own top comment for why that's safe. */
+static void gps_ring_push(uint8_t b) {
+    uint8_t const nextHead = (uint8_t)((gpsRxHead + 1) % GPS_UART_RING_SIZE);
+    if (nextHead != gpsRxTail) {
+        gpsRxBuf[gpsRxHead] = b;
+        gpsRxHead = nextHead;
+    }
+}
+
+void USART2_IRQHandler(void) {
+    if (LL_USART_IsActiveFlag_RXNE(USART2)) {
+        gps_ring_push((uint8_t)USART2->RDR);
+    }
+}
+
 void USART3_IRQHandler(void) {
     if (LL_USART_IsActiveFlag_RXNE(USART3)) {
-        uint8_t const b = (uint8_t)USART3->RDR;
-        uint8_t const nextHead = (uint8_t)((gpsRxHead + 1) % GPS_UART_RING_SIZE);
-        if (nextHead != gpsRxTail) {
-            gpsRxBuf[gpsRxHead] = b;
-            gpsRxHead = nextHead;
-        }
-        /* A full buffer drops the byte rather than overwriting unread
-           data -- same choice board_sport_uart's own ring buffer makes;
-           gps.c's task drains this every GPS_TASK_PERIOD_MS, comfortably
-           faster than 128 bytes could fill at 115200 baud's realistic
-           NMEA sentence rate (a full GGA+RMC pair is well under 128
-           bytes). */
+        gps_ring_push((uint8_t)USART3->RDR);
     }
 }
 

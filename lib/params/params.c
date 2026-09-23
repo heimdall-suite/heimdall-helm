@@ -44,11 +44,42 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
        .source, no clash there. .protocol defaults to plain 0 -- opaque,
        no meaning assigned by this store (params.h's own comment).
 
-       gps/mag stay fully inert here -- #54's original "no forced claim"
-       defaults, unchanged. No driver reads them yet (#56/#57's job). */
-    {"gps.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
-    {"gps.protocol", PARAM_TYPE_U32, 0U},
-    {"gps.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+       mag stays fully inert here -- #54's original "no forced claim"
+       default, unchanged. No driver reads it yet (#57's job). gps got
+       its own real per-board defaults from #56 onward -- see that
+       #if block below, same "duplicated by hand" convention as
+       input/telemetry's own (further down this file). Defined this
+       early (ahead of input/telemetry's own block) only because
+       ParamId's fixed enum order (params.h) puts gps.*'s array entries
+       first -- these macros just need to exist before their first use
+       below, same as any other preprocessor definition. */
+#if defined(STM32H7) /* matek_h743 -- the only board with a real GPS UART
+                         transport today (HELM_HAS_GPS_UART_TRANSPORT,
+                         board_features.h) */
+#define HELM_GPS_DEFAULT_PORT 2U /* Port C, UART3 -- #40's original (and,
+                                     until #56, only) GPS port; still the
+                                     boot-identical default #56 itself
+                                     requires. Port B (index 1) is the
+                                     other real candidate -- #56's own
+                                     "worth confirming gps.port b works"
+                                     call-out, not this default. */
+#define HELM_GPS_DEFAULT_SOURCE PARAM_PORT_SOURCE_DIRECT
+#else /* afroflight32/nexus_xr -- no GPS UART transport implemented on
+         either (board_features.h's own HELM_HAS_GPS_UART_TRANSPORT
+         comment); afroflight32 also has nowhere free to bind one even
+         if it did (its one real UART is already input's Port A, #55) */
+#define HELM_GPS_DEFAULT_PORT PARAM_PORT_UNSET
+#define HELM_GPS_DEFAULT_SOURCE PARAM_PORT_SOURCE_NONE
+#endif
+
+    {"gps.port", PARAM_TYPE_U32, HELM_GPS_DEFAULT_PORT},
+    {"gps.protocol", PARAM_TYPE_U32, 0U}, /* GPS_PROTOCOL_NMEA (gps.h) --
+                                              raw 0U here, no include path
+                                              to lib/sensors/ from this
+                                              file (same reasoning
+                                              input_mode's own comment
+                                              gives for lib/rx/) */
+    {"gps.source", PARAM_TYPE_U32, HELM_GPS_DEFAULT_SOURCE},
     {"mag.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
     {"mag.protocol", PARAM_TYPE_U32, 0U},
     {"mag.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
@@ -216,8 +247,14 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    persisted during #54's own bench session still held input.port as
    PARAM_PORT_UNSET, so nothing was there to collide with. Discarding
    old records here, not just relying on "freshly-flashed" as #55's own
-   boot-identical requirement assumed, closes that gap for real. */
-#define PARAMS_VERSION 6U
+   boot-identical requirement assumed, closes that gap for real.
+   Bumped 6->7 for issue #56 -- same non-size, changed-meaning reasoning
+   as the 5->6 bump directly above: gps.port/gps.source go from #54's
+   inert PARAM_PORT_UNSET/_SOURCE_NONE to real per-board defaults
+   (Port C/direct on matek_h743), and gps.c now actually acts on them
+   (#55's own gap, applied proactively here instead of waiting to
+   bench-catch it a second time). */
+#define PARAMS_VERSION 7U
 
 typedef struct {
     uint8_t magic;

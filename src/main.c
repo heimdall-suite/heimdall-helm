@@ -42,7 +42,7 @@
 #if HELM_HAS_BATTERY_SENSE
 #include "battery.h"
 #endif
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
 #include "gps.h"
 #endif
 
@@ -216,15 +216,16 @@ int main(void) {
     battery_start();
 #endif
 
-#if HELM_HAS_GPS
-    // Start the GPS module (issue #40) -- same shape as the other sensor
-    // modules above, but a genuine hot-pluggable peripheral, not an
-    // always-on onboard one: HELM_HAS_GPS tracks that this board's UART
-    // is wired to a GPS header, not that a module is actually plugged in
-    // and powered right now (board.h's own board_gps_uart_init()
-    // comment). gps_get_latest() reports SENSOR_STATUS_FAILED for as
-    // long as nothing is connected, same as a failed onboard sensor
-    // read.
+#if HELM_HAS_GPS_UART_TRANSPORT
+    // Start the GPS module (issue #40, refactored onto the port/
+    // protocol/source model by issue #56) -- same shape as the other
+    // sensor modules above, but a genuine hot-pluggable peripheral, not
+    // an always-on onboard one. HELM_HAS_GPS_UART_TRANSPORT tracks that
+    // this board can bind GPS to *some* port at all -- which one, if
+    // any, is entirely gps.port/gps.source's own runtime pick (#54),
+    // resolved once inside gps_task(). gps_get_latest() reports
+    // SENSOR_STATUS_FAILED for as long as nothing is connected (or no
+    // port is assigned), same as a failed onboard sensor read.
     gps_start();
 #endif
 
