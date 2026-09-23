@@ -78,7 +78,22 @@ void battery_start(void) {
     initial.status = SENSOR_STATUS_FAILED;
     xQueueOverwrite(battery_queue, &initial);
 
-    xTaskCreate(battery_task, "battery", configMINIMAL_STACK_SIZE, NULL, BATTERY_TASK_PRIORITY, NULL);
+    /* configMINIMAL_STACK_SIZE * 4, not the bare configMINIMAL_STACK_SIZE
+       baro_task/imu_task use -- same reasoning lib/cli/cli.c's own
+       cli_task already documents for its own *4: board_battery_adc_init()
+       runs on this task's stack, not main()'s, and its call chain
+       (HAL_RCCEx_PeriphCLKConfig() + HAL_ADC_Init() +
+       HAL_ADCEx_Calibration_Start(), each several HAL frames deep) is
+       heavier than baro/imu's plain I2C register pokes -- the bare
+       configMINIMAL_STACK_SIZE (512B, FreeRTOSConfig.h) silently
+       overflowed here, tripping configCHECK_FOR_STACK_OVERFLOW's hook
+       (main.c) and halting the whole board with interrupts disabled
+       before any task -- including heartbeat -- ever got a single
+       scheduler slot. Bench-confirmed: this board showed zero LED
+       activity from the commit that added this call onward, root-caused
+       by bisecting back to a known-good commit and comparing stack
+       depth against cli_task's own already-precedented exception. */
+    xTaskCreate(battery_task, "battery", configMINIMAL_STACK_SIZE * 4, NULL, BATTERY_TASK_PRIORITY, NULL);
 }
 
 void battery_get_latest(BatterySample *out) {
