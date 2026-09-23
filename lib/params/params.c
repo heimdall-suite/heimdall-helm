@@ -42,19 +42,83 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
        out0.min etc. use a real 0 default elsewhere in this file.
        PARAM_PORT_SOURCE_NONE (0) is the real "not configured" value for
        .source, no clash there. .protocol defaults to plain 0 -- opaque,
-       no meaning assigned by this store (params.h's own comment). */
+       no meaning assigned by this store (params.h's own comment).
+
+       gps/mag stay fully inert here -- #54's original "no forced claim"
+       defaults, unchanged. No driver reads them yet (#56/#57's job). */
     {"gps.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
     {"gps.protocol", PARAM_TYPE_U32, 0U},
     {"gps.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
     {"mag.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
     {"mag.protocol", PARAM_TYPE_U32, 0U},
     {"mag.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
-    {"input.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
-    {"input.protocol", PARAM_TYPE_U32, 0U},
-    {"input.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
-    {"telemetry.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
-    {"telemetry.protocol", PARAM_TYPE_U32, 0U},
-    {"telemetry.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+
+    /* Issue #55 -- input/telemetry are the first real consumers of #54's
+       shape, so unlike gps/mag above, these need real per-board defaults,
+       not an inert PARAM_PORT_UNSET -- #55's own "boot-identical"
+       requirement means a freshly-flashed/never-written board must still
+       claim the exact port its receiver/telemetry link is actually wired
+       to (.docs/hardware.md's port inventory, #52), same "don't silently
+       default away from this board's real wiring" reasoning input_mode's
+       own comment above already gives. Keyed off the STM32H7/STM32F1/
+       STM32F7 chip-family macros lib/cli/cli.c already uses for board
+       dispatch in a shared file -- this file has no include path to
+       board.h's HELM_BOARD_NAME (same BuildSources() limitation this
+       file's own top comment already explains for lib/rx/), so a
+       preprocessor macro already available in every translation unit is
+       the only board-identifying signal available here. One #define
+       block per board, same "duplicated by hand" convention this file's
+       own input_mode comment already documents for
+       HELM_RX_DEFAULT_PROTOCOL_SBUS/_CRSF. */
+#if defined(STM32H7) /* matek_h743 */
+#define HELM_INPUT_DEFAULT_PORT 4U         /* Port E, UART6 -- SBUS today (#8) */
+#define HELM_TELEMETRY_DEFAULT_PORT 5U     /* Port F, UART7 -- S.Port today (#18) */
+#define HELM_TELEMETRY_DEFAULT_PROTOCOL 0U /* the only telemetry protocol implemented
+                                               today (sport.c) -- no public enum yet,
+                                               nothing branches on this value (#55's own
+                                               scope: prove the mechanism against
+                                               already-shipped wiring, not build real
+                                               telemetry-protocol dispatch) */
+#elif defined(STM32F1)                            /* afroflight32 */
+#define HELM_INPUT_DEFAULT_PORT 0U                /* Port A, USART2 -- SBUS today (#52's audit) */
+#define HELM_TELEMETRY_DEFAULT_PORT PARAM_PORT_UNSET /* no S.Port UART on this board
+                                                          (HELM_HAS_SPORT_UART 0) */
+#define HELM_TELEMETRY_DEFAULT_PROTOCOL 0U
+#else /* nexus_xr (STM32F7) -- onboard ExpressLRS receiver (UART5, not a
+         connector), ports.md's `source = onboard` case, not `direct` --
+         .port stays unset, same as this board keeps every other
+         HELM_HAS_* flag at 0: no bench-confirmed hardware to claim a
+         real port index against yet. This file is excluded from
+         nexus_xr's build entirely today anyway
+         (HELM_FEATURE_PARAMS_PERSIST 0, board_features.h) -- this
+         branch only matters once that changes. */
+#define HELM_INPUT_DEFAULT_PORT PARAM_PORT_UNSET
+#define HELM_TELEMETRY_DEFAULT_PORT PARAM_PORT_UNSET
+#define HELM_TELEMETRY_DEFAULT_PROTOCOL 0U
+#endif
+
+#if defined(STM32F7) /* nexus_xr -- see the #define block above */
+#define HELM_INPUT_DEFAULT_SOURCE PARAM_PORT_SOURCE_ONBOARD
+#else /* matek_h743/afroflight32 -- both wired directly, no onboard/bridge case for RX today */
+#define HELM_INPUT_DEFAULT_SOURCE PARAM_PORT_SOURCE_DIRECT
+#endif
+
+#if defined(STM32H7) /* matek_h743 -- the only board with a real S.Port UART today */
+#define HELM_TELEMETRY_DEFAULT_SOURCE PARAM_PORT_SOURCE_DIRECT
+#else
+#define HELM_TELEMETRY_DEFAULT_SOURCE PARAM_PORT_SOURCE_NONE
+#endif
+
+    {"input.port", PARAM_TYPE_U32, HELM_INPUT_DEFAULT_PORT},
+    {"input.protocol", PARAM_TYPE_U32, HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U}, /* same
+                                                        raw-0U/1U-not-rx.h's-enum reasoning
+                                                        as input_mode's default above --
+                                                        this is input_mode's real successor
+                                                        as of #55 (see rx.c) */
+    {"input.source", PARAM_TYPE_U32, HELM_INPUT_DEFAULT_SOURCE},
+    {"telemetry.port", PARAM_TYPE_U32, HELM_TELEMETRY_DEFAULT_PORT},
+    {"telemetry.protocol", PARAM_TYPE_U32, HELM_TELEMETRY_DEFAULT_PROTOCOL},
+    {"telemetry.source", PARAM_TYPE_U32, HELM_TELEMETRY_DEFAULT_SOURCE},
 
     /* Issue #39 -- output.c's per-slot endpoint/subtrim/reverse
        trim, HELM_PARAMS_MAX_OUTPUT_SLOTS (params.h) slots' worth

@@ -57,17 +57,16 @@ typedef enum {
     PARAM_TEST_COUNTER = 0, /* throwaway, this issue's own proof -- remove once a
                                 real param exists and nothing still depends on this
                                 one for CLI/bench verification */
-    PARAM_INPUT_MODE,       /* issue #10 -- lib/rx/rx.c's runtime protocol pick,
-                                RX_INPUT_MODE_SBUS/_CRSF (rx.h). First real
-                                consumer of this store; test_counter above stays
-                                for now (see its own comment). Deliberately NOT
-                                replaced by PARAM_INPUT_PROTOCOL below -- issue
-                                #54 only builds the generic port/protocol/source
-                                mechanism, rx.c doesn't adopt it yet (that's
-                                #55/#56/#57's job), so this stays the one rx.c
-                                actually reads until then. The two will disagree
-                                if someone sets input.protocol without also
-                                updating this -- expected, temporary, not a bug. */
+    PARAM_INPUT_MODE,       /* issue #10 -- originally lib/rx/rx.c's runtime
+                                protocol pick, RX_INPUT_MODE_SBUS/_CRSF (rx.h).
+                                Superseded by PARAM_INPUT_PROTOCOL below as of
+                                issue #55 -- rx.c now reads that instead (see
+                                rx_start()'s own comment in rx.c). Kept defined
+                                here, never renumbered/removed (this enum's own
+                                positional-storage rule, this file's own top
+                                comment), but nothing reads it any more; stays
+                                purely as a historical/legacy slot. test_counter
+                                above stays for the same never-remove reason. */
     PARAM_SERVO_RATE,       /* issue #31 -- lib/servo/servo.c's PWM frame rate,
                                 one setting for every output slot (period is a
                                 per-timer property, shared across every channel
@@ -79,17 +78,25 @@ typedef enum {
        routing subsystem (.docs/architecture/ports.md), the model that
        replaces the old one-bit-per-role HELM_HAS_GPS approach. Four real
        subsystems, not a throwaway proof value: gps/mag/input/telemetry
-       are the ones ports.md itself names. No driver reads any of these
-       yet (#55/#56/#57's job) -- pure bookkeeping, validated through
+       are the ones ports.md itself names, validated through
        param_set_port() below, proven via the CLI same as every other
-       param here. .port defaults to PARAM_PORT_UNSET and .source to
-       PARAM_PORT_SOURCE_NONE on every subsystem -- deliberately no
-       forced claim on first boot, matching ports.md's "GPS/mag: always
-       a runtime choice" stance (the exact conflation HELM_HAS_GPS got
-       wrong). .protocol's meaning is entirely up to whichever driver
-       eventually reads it (#55-57) -- this store treats it as an opaque
-       u32, no cross-param validation, same as PARAM_INPUT_MODE/
-       PARAM_SERVO_RATE above. */
+       param here. .protocol's meaning is entirely up to whichever driver
+       reads it -- this store treats it as an opaque u32, no cross-param
+       validation, same as PARAM_SERVO_RATE above.
+
+       gps/mag: no driver reads these yet (#56/#57's job) -- pure
+       bookkeeping. .port defaults to PARAM_PORT_UNSET and .source to
+       PARAM_PORT_SOURCE_NONE, deliberately no forced claim on first
+       boot, matching ports.md's "GPS/mag: always a runtime choice"
+       stance (the exact conflation HELM_HAS_GPS got wrong).
+
+       input/telemetry: issue #55 made these the real first consumers
+       (rx.c reads PARAM_INPUT_PROTOCOL, superseding PARAM_INPUT_MODE
+       above), so unlike gps/mag they get real per-board .port/.source
+       defaults (params.c) matching this board's actual wiring, not an
+       inert PARAM_PORT_UNSET/_SOURCE_NONE -- #55's "boot-identical"
+       requirement means a freshly-flashed board still claims the same
+       physical port its receiver/telemetry link already uses today. */
     PARAM_GPS_PORT,
     PARAM_GPS_PROTOCOL,
     PARAM_GPS_SOURCE,

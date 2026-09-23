@@ -69,16 +69,23 @@ static void rx_task(void *arg) {
 
 void rx_start(void) {
 #if HELM_FEATURE_PARAMS_PERSIST
-    /* Runtime pick (issue #10): the persisted input-mode param, read
-       once at container-start time -- not re-checked per poll, same
-       "bind once, forward every tick" shape this module already had.
-       param_get_u32() only fails on an out-of-range id, which
-       PARAM_INPUT_MODE never is, so mode's RX_DEFAULT_INPUT_MODE
+    /* Runtime pick: the persisted input.protocol param (issue #55),
+       read once at container-start time -- not re-checked per poll,
+       same "bind once, forward every tick" shape this module already
+       had. Supersedes issue #10's PARAM_INPUT_MODE, which this file no
+       longer reads -- #54 gave input its own .port/.protocol/.source
+       triple (params.h), and #55 is the issue that makes it the real
+       consumer, same encoding (RX_INPUT_MODE_SBUS/_CRSF below) so this
+       board's default value is unchanged either way. PARAM_INPUT_MODE
+       itself stays defined in params.h (never renumber/remove a
+       ParamId, positional-storage rule) but is now vestigial -- nothing
+       reads it. param_get_u32() only fails on an out-of-range id, which
+       PARAM_INPUT_PROTOCOL never is, so mode's RX_DEFAULT_INPUT_MODE
        initializer is unreachable in practice, not a real fallback path;
        it's there so a future misuse of this pattern fails safe instead
        of reading uninitialized stack. */
     uint32_t mode = RX_DEFAULT_INPUT_MODE;
-    param_get_u32(PARAM_INPUT_MODE, &mode);
+    param_get_u32(PARAM_INPUT_PROTOCOL, &mode);
     active_driver = (mode == RX_INPUT_MODE_CRSF) ? rx_crsf_driver() : rx_sbus_driver();
 #else
     active_driver =
