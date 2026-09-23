@@ -35,6 +35,17 @@ static GpsFix latestFix;
 static char lineBuf[GPS_LINE_MAX_LEN];
 static uint8_t lineLen;
 
+/* Bench-diagnostic counters -- see gps_get_counters()'s own comment in
+   gps.h for what these prove and why. Plain non-atomic increments: both
+   only ever get written from gps_task's own context (gps_process_byte()/
+   gps_process_sentence() are only ever called from there), and read
+   from the CLI task via gps_get_counters() -- same benign single-writer/
+   occasional-reader shape sport.c's own poll counters already rely on,
+   a torn read here is at worst one stale/half-updated diagnostic number,
+   never a control-relevant value. */
+static uint32_t bytesReceivedCount;
+static uint32_t validSentenceCount;
+
 /* Parses NMEA's ddmm.mmmm (lat) / dddmm.mmmm (lon) format + N/S/E/W
    direction into signed decimal degrees. Integer truncation instead of
    floor() -- raw is always >= 0 here (NMEA encodes sign as a separate
@@ -131,6 +142,7 @@ static void gps_process_sentence(char *sentence) {
     if (!nmea_checksum_valid(sentence)) {
         return;
     }
+    validSentenceCount++;
 
     char *fields[GPS_MAX_FIELDS];
     uint8_t const fieldCount = split_fields(sentence, fields, GPS_MAX_FIELDS);
@@ -166,6 +178,8 @@ static void gps_process_sentence(char *sentence) {
    board_sbus_uart_take_frame()'s own header comment gives for SBUS's
    idle-line capture. */
 static void gps_process_byte(uint8_t b) {
+    bytesReceivedCount++;
+
     if (b == '$') {
         lineLen = 0;
         lineBuf[lineLen++] = (char)b;
@@ -231,6 +245,11 @@ void gps_start(void) {
 
 void gps_get_latest(GpsFix *out) {
     xQueuePeek(gps_queue, out, 0);
+}
+
+void gps_get_counters(uint32_t *bytesReceived, uint32_t *validSentences) {
+    *bytesReceived = bytesReceivedCount;
+    *validSentences = validSentenceCount;
 }
 
 #endif /* HELM_HAS_GPS */
