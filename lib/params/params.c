@@ -35,6 +35,27 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
        raw 0U/1U above -- no include path to lib/servo/ from this file. */
     {"servo_rate", PARAM_TYPE_U32, 0U},
 
+    /* Issue #54 -- gps/mag/input/telemetry's own .port/.protocol/.source
+       triples (params.h's own comment on the PARAM_GPS_PORT block has
+       the full rationale). PARAM_PORT_UNSET (0xFF), not 0 -- 0 is Port A,
+       a real port, so it can't double as "no port claimed" the way
+       out0.min etc. use a real 0 default elsewhere in this file.
+       PARAM_PORT_SOURCE_NONE (0) is the real "not configured" value for
+       .source, no clash there. .protocol defaults to plain 0 -- opaque,
+       no meaning assigned by this store (params.h's own comment). */
+    {"gps.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
+    {"gps.protocol", PARAM_TYPE_U32, 0U},
+    {"gps.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+    {"mag.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
+    {"mag.protocol", PARAM_TYPE_U32, 0U},
+    {"mag.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+    {"input.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
+    {"input.protocol", PARAM_TYPE_U32, 0U},
+    {"input.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+    {"telemetry.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
+    {"telemetry.protocol", PARAM_TYPE_U32, 0U},
+    {"telemetry.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+
     /* Issue #39 -- output.c's per-slot endpoint/subtrim/reverse
        trim, HELM_PARAMS_MAX_OUTPUT_SLOTS (params.h) slots' worth
        regardless of board (see that file's own comment on why this
@@ -112,8 +133,11 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    #39 (adding the 32 output-slot-trim params grows values[] from
    3 to 35 u32s) -- same shape change again, same reasoning: a record
    saved under version 3 must be discarded, not misread with 32 slot
-   params reinterpreted from bytes that were never written for them. */
-#define PARAMS_VERSION 4U
+   params reinterpreted from bytes that were never written for them.
+   Bumped 4->5 for issue #54 (adding the 12 gps/mag/input/telemetry
+   port/protocol/source params grows values[] from 35 to 47 u32s) --
+   same shape change, same reasoning. */
+#define PARAMS_VERSION 5U
 
 typedef struct {
     uint8_t magic;
@@ -232,4 +256,187 @@ int16_t param_find_by_name(char const *name) {
         }
     }
     return -1;
+}
+
+bool param_id_is_port_field(ParamId id) {
+    return id == PARAM_GPS_PORT || id == PARAM_MAG_PORT || id == PARAM_INPUT_PORT ||
+           id == PARAM_TELEMETRY_PORT;
+}
+
+/* Port-existence lookup (issue #54, validating against #53's per-board
+   HELM_HAS_PORT_<X>_UART/_I2C flags). Guarded per letter with #ifdef,
+   not a bare HELM_HAS_PORT_<X>_UART reference -- a board only ever
+   #defines the flag for port letters its own inventory
+   (.docs/hardware.md) actually names; afroflight32, for example, never
+   defines HELM_HAS_PORT_C_UART at all (it only has Ports A/B), so
+   referencing it directly would fail to compile there. An undefined
+   flag here is treated identically to one #defined 0 -- both mean
+   "this board doesn't have this port letter/transport". 9 letters
+   (A-I) -- the largest port-letter span any of the three current
+   boards uses (matek_h743's I) -- bump if a future board ever needs
+   more. */
+#define HELM_PORT_LETTER_COUNT 9U
+
+#if defined(HELM_HAS_PORT_A_UART) && HELM_HAS_PORT_A_UART
+#define HELM_PORT_A_UART_BIT 1U
+#else
+#define HELM_PORT_A_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_B_UART) && HELM_HAS_PORT_B_UART
+#define HELM_PORT_B_UART_BIT 1U
+#else
+#define HELM_PORT_B_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_C_UART) && HELM_HAS_PORT_C_UART
+#define HELM_PORT_C_UART_BIT 1U
+#else
+#define HELM_PORT_C_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_D_UART) && HELM_HAS_PORT_D_UART
+#define HELM_PORT_D_UART_BIT 1U
+#else
+#define HELM_PORT_D_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_E_UART) && HELM_HAS_PORT_E_UART
+#define HELM_PORT_E_UART_BIT 1U
+#else
+#define HELM_PORT_E_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_F_UART) && HELM_HAS_PORT_F_UART
+#define HELM_PORT_F_UART_BIT 1U
+#else
+#define HELM_PORT_F_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_G_UART) && HELM_HAS_PORT_G_UART
+#define HELM_PORT_G_UART_BIT 1U
+#else
+#define HELM_PORT_G_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_H_UART) && HELM_HAS_PORT_H_UART
+#define HELM_PORT_H_UART_BIT 1U
+#else
+#define HELM_PORT_H_UART_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_I_UART) && HELM_HAS_PORT_I_UART
+#define HELM_PORT_I_UART_BIT 1U
+#else
+#define HELM_PORT_I_UART_BIT 0U
+#endif
+
+#if defined(HELM_HAS_PORT_A_I2C) && HELM_HAS_PORT_A_I2C
+#define HELM_PORT_A_I2C_BIT 1U
+#else
+#define HELM_PORT_A_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_B_I2C) && HELM_HAS_PORT_B_I2C
+#define HELM_PORT_B_I2C_BIT 1U
+#else
+#define HELM_PORT_B_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_C_I2C) && HELM_HAS_PORT_C_I2C
+#define HELM_PORT_C_I2C_BIT 1U
+#else
+#define HELM_PORT_C_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_D_I2C) && HELM_HAS_PORT_D_I2C
+#define HELM_PORT_D_I2C_BIT 1U
+#else
+#define HELM_PORT_D_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_E_I2C) && HELM_HAS_PORT_E_I2C
+#define HELM_PORT_E_I2C_BIT 1U
+#else
+#define HELM_PORT_E_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_F_I2C) && HELM_HAS_PORT_F_I2C
+#define HELM_PORT_F_I2C_BIT 1U
+#else
+#define HELM_PORT_F_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_G_I2C) && HELM_HAS_PORT_G_I2C
+#define HELM_PORT_G_I2C_BIT 1U
+#else
+#define HELM_PORT_G_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_H_I2C) && HELM_HAS_PORT_H_I2C
+#define HELM_PORT_H_I2C_BIT 1U
+#else
+#define HELM_PORT_H_I2C_BIT 0U
+#endif
+#if defined(HELM_HAS_PORT_I_I2C) && HELM_HAS_PORT_I_I2C
+#define HELM_PORT_I_I2C_BIT 1U
+#else
+#define HELM_PORT_I_I2C_BIT 0U
+#endif
+
+static uint8_t const kPortUartExists[HELM_PORT_LETTER_COUNT] = {
+    HELM_PORT_A_UART_BIT, HELM_PORT_B_UART_BIT, HELM_PORT_C_UART_BIT, HELM_PORT_D_UART_BIT,
+    HELM_PORT_E_UART_BIT, HELM_PORT_F_UART_BIT, HELM_PORT_G_UART_BIT, HELM_PORT_H_UART_BIT,
+    HELM_PORT_I_UART_BIT,
+};
+static uint8_t const kPortI2cExists[HELM_PORT_LETTER_COUNT] = {
+    HELM_PORT_A_I2C_BIT, HELM_PORT_B_I2C_BIT, HELM_PORT_C_I2C_BIT, HELM_PORT_D_I2C_BIT,
+    HELM_PORT_E_I2C_BIT, HELM_PORT_F_I2C_BIT, HELM_PORT_G_I2C_BIT, HELM_PORT_H_I2C_BIT,
+    HELM_PORT_I_I2C_BIT,
+};
+
+bool param_port_exists(uint8_t portIndex, ParamPortTransport transport) {
+    if (portIndex >= HELM_PORT_LETTER_COUNT) {
+        return false;
+    }
+    return (transport == PARAM_PORT_TRANSPORT_UART ? kPortUartExists[portIndex]
+                                                    : kPortI2cExists[portIndex]) != 0U;
+}
+
+/* The one place this otherwise subsystem-agnostic store knows the 4
+   real subsystems' names -- same kind of necessary exception g_paramDefs
+   itself already is. Whichever subsystem is added next (a future bridge,
+   ports.md's "Telemetry bridges" section) gets a row here too, same as
+   it gets rows in g_paramDefs above. */
+typedef struct {
+    ParamId portId;
+    ParamId sourceId;
+} PortOwnerFields;
+
+static PortOwnerFields const kPortOwners[] = {
+    {PARAM_GPS_PORT, PARAM_GPS_SOURCE},
+    {PARAM_MAG_PORT, PARAM_MAG_SOURCE},
+    {PARAM_INPUT_PORT, PARAM_INPUT_SOURCE},
+    {PARAM_TELEMETRY_PORT, PARAM_TELEMETRY_SOURCE},
+};
+
+bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport) {
+    if (portIndex != PARAM_PORT_UNSET && !param_port_exists(portIndex, transport)) {
+        return false;
+    }
+
+    /* Collision check -- a port claimed (`.source == DIRECT`) by a
+       DIFFERENT subsystem already pointing its own `.port` at the same
+       letter is rejected, full stop (ports.md's port-collision rule).
+       A subsystem whose `.source != DIRECT` doesn't count as claiming
+       anything, regardless of whatever its `.port` currently holds --
+       `.port`/`.protocol` are only meaningful when `.source == DIRECT`
+       (params.h's own comment), so a stale/default `.port` value on an
+       onboard- or none-sourced subsystem must never block someone else
+       from taking that letter. PARAM_PORT_UNSET itself never collides
+       with anything, real or not -- skip the check entirely when
+       clearing a claim. */
+    if (portIndex != PARAM_PORT_UNSET) {
+        for (size_t i = 0; i < (sizeof(kPortOwners) / sizeof(kPortOwners[0])); i++) {
+            if (kPortOwners[i].portId == portId) {
+                continue; /* self */
+            }
+
+            uint32_t otherSource = PARAM_PORT_SOURCE_NONE;
+            uint32_t otherPort = PARAM_PORT_UNSET;
+            param_get_u32(kPortOwners[i].sourceId, &otherSource);
+            param_get_u32(kPortOwners[i].portId, &otherPort);
+
+            if (otherSource == PARAM_PORT_SOURCE_DIRECT && otherPort == (uint32_t)portIndex) {
+                return false;
+            }
+        }
+    }
+
+    return param_set_u32(portId, portIndex);
 }
