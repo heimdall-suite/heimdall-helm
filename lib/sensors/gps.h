@@ -31,4 +31,16 @@ typedef struct {
 void gps_start(void);
 void gps_get_latest(GpsFix *out);
 
+/* Bench-diagnostic counters, same "tell link-dead apart from link-alive-
+   but-not-decoding apart from genuinely-working" split
+   lib/telemetry/sport.c's own sport_get_counters() already provides --
+   bytesReceived proves the physical UART link + baud are alive at all
+   (every byte gps_process_byte() ever sees, regardless of NMEA
+   validity); validSentences proves real, checksum-correct NMEA is
+   arriving, independent of whether a fix currently exists (gps_lat/etc.
+   only ever update from a GGA/RMC sentence that's already counted here
+   first). Lets `diag gps` answer "is the GPS module talking at all" on
+   a bench with no sky view to ever produce a real fix. */
+void gps_get_counters(uint32_t *bytesReceived, uint32_t *validSentences);
+
 #endif /* HELM_GPS_H */

@@ -16,6 +16,7 @@
 #endif
 #include "imu.h"
 #include "baro.h"
+#include "gps.h"
 
 /* `pipeline`: prints the Input->Mapping->Control->Output->Servo chain's
    final stage output -- as of #36, real per-slot output mapping
@@ -222,6 +223,24 @@ static void diag_sport(void) {
 }
 #endif
 
+#if HELM_HAS_GPS
+/* `gps`: bytes-received vs. valid-NMEA-sentence counters -- same
+   "tell link-dead apart from link-alive-but-not-decoding apart from
+   genuinely-working" split diag_sport() above already gives, see
+   gps.h's own gps_get_counters() comment. Answers "is the module
+   talking at all" on a bench with no sky view to ever produce a real
+   fix (gps_lat/etc. in `diag telemetry` stay FAILED regardless). */
+static void diag_gps(void) {
+    uint32_t bytesReceived, validSentences;
+    gps_get_counters(&bytesReceived, &validSentences);
+
+    char line[64];
+    snprintf(line, sizeof(line), "gps: bytes=%lu valid_sentences=%lu\r\n", (unsigned long)bytesReceived,
+             (unsigned long)validSentences);
+    shell_print(line);
+}
+#endif
+
 #if HELM_HAS_IMU
 /* `imu`: dumps the IMU sample queue's current state (issue #14) -- proves
    imu_start()'s task/queue/supervisor wiring round-trips on real
@@ -293,6 +312,10 @@ void diag_dispatch(const char *args) {
     } else if (strcmp(args, "baro") == 0) {
         diag_baro();
 #endif
+#if HELM_HAS_GPS
+    } else if (strcmp(args, "gps") == 0) {
+        diag_gps();
+#endif
     } else {
         shell_print("usage: diag <subcommand> -- available: pipeline, mapping, control, wedge, telemetry"
 #if HELM_HAS_SPORT_UART
@@ -303,6 +326,9 @@ void diag_dispatch(const char *args) {
 #endif
 #if HELM_HAS_BARO
                     ", baro"
+#endif
+#if HELM_HAS_GPS
+                    ", gps"
 #endif
                     "\r\n");
     }
