@@ -223,7 +223,7 @@ static void diag_sport(void) {
 }
 #endif
 
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
 /* `gps`: bytes-received vs. valid-NMEA-sentence counters -- same
    "tell link-dead apart from link-alive-but-not-decoding apart from
    genuinely-working" split diag_sport() above already gives, see
@@ -312,7 +312,7 @@ void diag_dispatch(const char *args) {
     } else if (strcmp(args, "baro") == 0) {
         diag_baro();
 #endif
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
     } else if (strcmp(args, "gps") == 0) {
         diag_gps();
 #endif
@@ -327,7 +327,7 @@ void diag_dispatch(const char *args) {
 #if HELM_HAS_BARO
                     ", baro"
 #endif
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
                     ", gps"
 #endif
                     "\r\n");

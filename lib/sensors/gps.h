@@ -4,19 +4,34 @@
 #include <stdint.h>
 #include "sensors.h"
 
-/* GPS driver (issue #40) -- NMEA 0183 over board_gps_uart_*() (board.h).
-   Same shared-status shape as imu.h/baro.h, but a genuine hot-pluggable
-   peripheral, not an always-present onboard sensor: the module needs
-   external power the user connects on demand, so it can be absent at
-   boot or connected mid-session (board.h's own comment has the full
-   provenance). status stays SENSOR_STATUS_FAILED for as long as that's
-   true -- never a stale/last-known fix dressed up as OK, same
-   never-fabricate-a-value discipline baro.h/lib/telemetry/sport.c
-   already use. HELM_HAS_GPS is a compile-time hardware fact (this
-   board's UART IS routed to a GPS header, whether or not a module
-   happens to be plugged in and powered right now), not a deliberate
-   HELM_FEATURE_* toggle, same reasoning as HELM_HAS_IMU/HELM_HAS_BARO.
-   gps_start() and this whole module are gated on that flag directly. */
+/* GPS driver (issue #40, refactored onto the port/protocol/source model
+   by issue #56 -- .docs/architecture/ports.md) -- NMEA 0183 over
+   board_gps_uart_*() (board.h). Same shared-status shape as imu.h/
+   baro.h, but a genuine hot-pluggable peripheral, not an always-present
+   onboard sensor: the module needs external power the user connects on
+   demand, so it can be absent at boot or connected mid-session (board.h's
+   own provenance comment). status stays SENSOR_STATUS_FAILED for as
+   long as that's true -- never a stale/last-known fix dressed up as OK,
+   same never-fabricate-a-value discipline baro.h/lib/telemetry/sport.c
+   already use.
+
+   This whole module now compiles in whenever
+   HELM_HAS_GPS_UART_TRANSPORT is set (board_features.h) -- a board that
+   can bind GPS to *some* port at all, not the old HELM_HAS_GPS's wrong
+   conflation of wiring + role + "only one possible port" (see ports.md
+   for the full history). Which port, if any, is actually claimed is
+   gps.port/gps.protocol/gps.source (#54), resolved once at gps_start()
+   time -- an unassigned port and an unplugged module collapse into the
+   exact same FAILED case (#56's own scope note), so this file no longer
+   needs to distinguish "not configured" from "configured but nothing
+   answering". */
+#define GPS_PROTOCOL_NMEA 0U /* the only protocol implemented -- UBX is a
+                                 real future value (issue #56's own "out
+                                 of scope" note), not built yet; gps.c
+                                 treats any other value as unsupported,
+                                 same FAILED-forever treatment as an
+                                 unassigned port */
+
 typedef struct {
     float latitude_deg;  /* decimal degrees, +N/-S -- only meaningful when status is OK */
     float longitude_deg; /* decimal degrees, +E/-W -- only meaningful when status is OK */

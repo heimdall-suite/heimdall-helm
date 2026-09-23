@@ -228,31 +228,48 @@ void board_battery_adc_init(void);
 uint16_t board_battery_adc_read_vbat_raw(void);
 uint16_t board_battery_adc_read_curr_raw(void);
 
-/* GPS UART -- USART3, PD9 ("RX" on this board's free header), NMEA
-   input at its standard 115200 8N1 (issue #40). RX only, same "receiver
-   only ever transmits to the FC" reasoning board_sbus_uart_init() uses
-   for its own TX pin -- PD8 (USART3_TX) is left unconfigured. Confirmed
-   free against every UART/bus this board's board.c already claims
-   (USART6 SBUS/PC7, UART7 S.Port/PE8, SPI1 IMU, I2C2 baro) -- none touch
-   PD8/PD9.
+/* GPS UART -- issue #56's port/protocol/source model (see
+   .docs/architecture/ports.md), replacing #40's original single-port
+   design. NMEA input at its standard 115200 8N1, RX only, same
+   "receiver only ever transmits to the FC" reasoning
+   board_sbus_uart_init() uses for its own TX pin.
 
-   Plain RXNE ISR into a ring buffer, same lightweight register-level
-   pattern board_sport_uart_*() already established for UART7 -- no DMA
-   needed at NMEA's realistic sentence rate (a few Hz), unlike SBUS's
-   tight continuous 100000 baud stream.
+   board_gps_uart_init() now takes a port index (params.h's 0-based
+   letter encoding, A=0) rather than being hardwired to one UART --
+   lib/sensors/gps.c resolves gps.port/gps.source (#54) at gps_start()
+   time and passes whatever it resolves to here. Only two of this
+   board's ports are actually wired up: Port B (index 1, UART2, PD5/PD6,
+   Matek's own "GPS1" suggested use) and Port C (index 2, UART3, PD8/PD9,
+   "GPS2" -- the only port #40's original design supported). Returns
+   false, initializing nothing, for any other port index -- gps.c treats
+   that identically to "no module plugged in", never a crash (see that
+   file's own comment on why an unsupported port choice must degrade
+   gracefully, not Error_Handler()). RX-only on both: PD8 (USART3_TX) /
+   PD5 (USART2_TX) stay unconfigured, confirmed free against every other
+   UART/bus this board's board.c already claims (USART6 SBUS/PC7, UART7
+   S.Port/PE8, SPI1 IMU, I2C2 baro) -- neither pin pair collides.
+
+   Plain RXNE ISR into one shared ring buffer per active port, same
+   lightweight register-level pattern board_sport_uart_*() already
+   established for UART7 -- no DMA needed at NMEA's realistic sentence
+   rate (a few Hz), unlike SBUS's tight continuous 100000 baud stream.
+   Only one of USART2_IRQHandler()/USART3_IRQHandler() (board.c) is ever
+   actually enabled at a time -- board_gps_uart_init() only arms RXNE on
+   whichever port it just configured, so both handlers safely share the
+   same buffer with no risk of concurrent writers.
 
    This module is a genuine hot-pluggable peripheral, not an onboard
    sensor -- the GPS module needs external power the user connects on
    demand (to avoid draining the boat's main battery), so it can be
-   absent at boot or connected mid-session. board_gps_uart_init() itself
-   doesn't care either way (same "init unconditionally, non-blocking
-   drain" shape aoa-boat-controller's own GpsReader uses) -- absence
-   just means board_gps_uart_available() never returns true, and
-   lib/sensors/gps.c's own "last updated" staleness tracking (same
-   never-fabricate-a-value convention baro.h/sport.c already use) never
-   advances. See board_gps_uart_init()'s own comment in board.c for the
-   fuller provenance. */
-void board_gps_uart_init(void);
+   absent at boot or connected mid-session, same as before #56. Absence
+   (or an unassigned/unsupported port) just means
+   board_gps_uart_available() never returns true, and lib/sensors/gps.c's
+   own "last updated" staleness tracking (same never-fabricate-a-value
+   convention baro.h/sport.c already use) never advances -- #56's own
+   scope note: "unassigned port and unplugged module collapse into the
+   same case". See board_gps_uart_init()'s own comment in board.c for
+   the fuller provenance. */
+bool board_gps_uart_init(uint8_t portIndex);
 bool board_gps_uart_available(void);
 uint8_t board_gps_uart_read_byte(void);
 

@@ -4,8 +4,10 @@
 
 /* Whole-file guard, same idiom lib/telemetry/sport.c uses for
    HELM_HAS_SPORT_UART -- compiles to an empty translation unit on any
-   board without a ported board_gps_uart_*() transport (board.h). */
-#if HELM_HAS_GPS
+   board without a ported board_gps_uart_*() transport (board.h). Issue
+   #56 retired the old HELM_HAS_GPS flag this used to guard on -- see
+   HELM_HAS_GPS_UART_TRANSPORT's own comment (board_features.h) for why. */
+#if HELM_HAS_GPS_UART_TRANSPORT
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -15,6 +17,9 @@
 #include "task.h"
 #include "supervisor.h"
 #include "board.h"
+#if HELM_FEATURE_PARAMS_PERSIST
+#include "params.h"
+#endif
 
 #define GPS_TASK_PERIOD_MS 100 /* faster than baro.c's 1000ms -- needs to drain
                                    board.h's ring buffer often enough that it
@@ -206,6 +211,17 @@ static void gps_process_byte(uint8_t b) {
     }
 }
 
+/* Whether board_gps_uart_init() actually bound a real UART this boot --
+   an unassigned port, an unresolvable source, or an unsupported
+   protocol all leave this false, same "never even try to read hardware"
+   treatment (#56's own scope note: unassigned port and unplugged module
+   collapse into the same case). Set once, in gps_task(), never touched
+   again -- same "bind once, forward every tick" shape rx_start()'s own
+   driver pick already established; changing gps.port/gps.source live
+   would need a reboot to actually take effect regardless, since it's a
+   hardware rebind, not a plain calibration number. */
+static bool gps_uart_bound;
+
 static void gps_task(void *arg) {
     (void)arg;
 
@@ -214,13 +230,49 @@ static void gps_task(void *arg) {
     SupervisorHandle handle = supervisor_register("gps", gps_queue, &fallback, sizeof(fallback),
                                                     pdMS_TO_TICKS(GPS_TASK_PERIOD_MS * 3));
 
-    board_gps_uart_init();
+#if HELM_FEATURE_PARAMS_PERSIST
+    /* Resolve gps.source/gps.port/gps.protocol (#54) once, here.
+       PARAM_PORT_SOURCE_DIRECT is the only source this issue implements
+       -- bridge-named values are accepted by param_set_port()'s own
+       validation for forward compatibility (#54's reserved value shape)
+       but never acted on here, since no bridge subsystem exists yet
+       (#56's own explicit out-of-scope note); anything else -- NONE,
+       ONBOARD (GPS has no onboard case, unlike mag), or a not-yet-real
+       bridge value -- leaves gps_uart_bound false. Same treatment for
+       GPS_PROTOCOL_NMEA: it's the only decoder this file implements, so
+       any other value (a future UBX pick, #56's own "out of scope,
+       natural follow-up" note) also just never binds -- an unsupported
+       protocol has nothing valid to read, same as no module attached. */
+    uint32_t source = PARAM_PORT_SOURCE_NONE;
+    uint32_t port = PARAM_PORT_UNSET;
+    uint32_t protocol = GPS_PROTOCOL_NMEA;
+    param_get_u32(PARAM_GPS_SOURCE, &source);
+    param_get_u32(PARAM_GPS_PORT, &port);
+    param_get_u32(PARAM_GPS_PROTOCOL, &protocol);
+
+    if (source == PARAM_PORT_SOURCE_DIRECT && protocol == GPS_PROTOCOL_NMEA) {
+        /* board_gps_uart_init() itself returns false (nothing
+           initialized/armed) for a port this board doesn't know how to
+           bind GPS to -- gps.port c is this board's boot-identical
+           default (params.c), b is the other real candidate (#56's own
+           "worth confirming in testing" call-out); anything else
+           degrades to the same unbound case, never a crash. */
+        gps_uart_bound = board_gps_uart_init((uint8_t)port);
+    }
+#endif
+    /* Without a persisted-param store there's no way to resolve a real
+       port/source choice at all -- gps_uart_bound stays false, same
+       FAILED-forever case as an unassigned port. Doesn't matter in
+       practice today: every board with HELM_HAS_GPS_UART_TRANSPORT set
+       also has HELM_FEATURE_PARAMS_PERSIST on. */
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(GPS_TASK_PERIOD_MS));
 
-        while (board_gps_uart_available()) {
-            gps_process_byte(board_gps_uart_read_byte());
+        if (gps_uart_bound) {
+            while (board_gps_uart_available()) {
+                gps_process_byte(board_gps_uart_read_byte());
+            }
         }
 
         xQueueOverwrite(gps_queue, &latestFix);

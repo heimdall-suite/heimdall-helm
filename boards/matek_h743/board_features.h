@@ -9,19 +9,6 @@
 #define HELM_HAS_IMU 1   /* ICM42688P, SPI -- confirmed */
 #define HELM_HAS_BARO 1  /* DPS310, I2C -- confirmed present in code, verify wiring */
 #define HELM_HAS_MAG 0   /* not wired, confirmed absent as of last check */
-#define HELM_HAS_GPS 1   /* wired (USART3/PD9, issue #40) but a genuine
-                             hot-pluggable peripheral, not an always-on
-                             onboard sensor -- the module needs external
-                             power the user connects on demand, to avoid
-                             draining the boat's main battery, so it can
-                             be absent at boot or connected mid-session.
-                             HELM_HAS_GPS tracks the wiring fact (is a
-                             UART actually routed to it), not whether a
-                             module happens to be powered right now --
-                             see board_gps_uart_init()'s own comment in
-                             board.h/board.c for the hot-plug design that
-                             makes that distinction safe to compile in
-                             unconditionally. */
 #define HELM_HAS_BLACKBOX_STORAGE 0 /* no SD/flash wired for logging on this unit -- TODO */
 #define HELM_HAS_BATTERY_SENSE 1 /* onboard PDB (power distribution board), ADC1
                                      PC0 (VBAT) + PC1 (CURR) -- confirmed against
@@ -89,9 +76,9 @@
    table for each port's pins/silk label. */
 #define HELM_HAS_PORT_A_UART 1 /* UART1, PA9/PA10, silk `TX1 RX1` */
 #define HELM_HAS_PORT_B_UART 1 /* UART2, PD5/PD6, silk `TX2 RX2` */
-#define HELM_HAS_PORT_C_UART 1 /* UART3, PD8/PD9, silk `TX3 RX3` -- where
-                                   HELM_HAS_GPS's board_gps_uart_init() lives
-                                   today (#40) */
+#define HELM_HAS_PORT_C_UART 1 /* UART3, PD8/PD9, silk `TX3 RX3` -- gps.port's
+                                   default (#56), one of the two ports
+                                   board_gps_uart_init() can bind GPS to */
 #define HELM_HAS_PORT_D_UART 1 /* UART4, PB9/PB8, silk `TX4 RX4` */
 #define HELM_HAS_PORT_E_UART 1 /* UART6, PC6/PC7, silk `TX6 RX6` -- where
                                    HELM_HAS_SBUS_UART below is wired today (#8) */
@@ -122,6 +109,20 @@
    is independent of HELM_FEATURE_CLI -- see .docs/cli.md's own comment
    on why these stay two separate flags. */
 #define HELM_HAS_SPORT_UART 1
+
+/* HELM_HAS_GPS_UART_TRANSPORT: this board's board_gps_uart_*() (board.h/
+   board.c) is implemented and can genuinely bind to more than one port
+   at runtime -- Port B (UART2, GPS1) or Port C (UART3, GPS2), matching
+   Matek's own suggested-use labels (.docs/hardware.md). Issue #56's own
+   replacement for the retired HELM_HAS_GPS flag, which wrongly
+   conflated "a UART is wired to a GPS header" with "role = gps" and
+   "only one possible port" -- see ports.md. Gates lib/sensors/gps.c's
+   whole-file compile (same idiom HELM_HAS_SBUS_UART/HELM_HAS_SPORT_UART
+   above already use); which port/protocol/source is actually active is
+   entirely a runtime pick now (gps.port/gps.protocol/gps.source, #54),
+   never baked into this flag. 0 on boards without board_gps_uart_*()
+   implemented at all, same category as the two flags above. */
+#define HELM_HAS_GPS_UART_TRANSPORT 1
 
 /* HELM_SERVO_COUNT: real per-board hardware fact (issue #36) -- how many
    physical servo connectors output.c's slotConfigs[] table sizes itself

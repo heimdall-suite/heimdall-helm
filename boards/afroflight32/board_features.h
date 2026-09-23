@@ -15,7 +15,6 @@
                              confirmed yet" was stale, corrected once that was
                              checked directly rather than assumed absent */
 #define HELM_HAS_MAG 0   /* not confirmed wired -- TODO */
-#define HELM_HAS_GPS 0   /* not confirmed wired -- TODO */
 #define HELM_HAS_BLACKBOX_STORAGE 1 /* 2MB SPI NOR on SPI2, all 4 pins free -- confirmed */
 #define HELM_HAS_BATTERY_SENSE 0 /* no onboard voltage/current-sense equivalent
                                      of matek_h743's PDB documented for this
@@ -136,6 +135,16 @@
    aoa-boat-controller's Naze32 target first, not assumed from the
    H743's UART7/PE8 choice. */
 #define HELM_HAS_SPORT_UART 0
+
+/* HELM_HAS_GPS_UART_TRANSPORT: see matek_h743/board_features.h's own
+   comment for what this gates (issue #56, retiring the old HELM_HAS_GPS
+   flag). No board_gps_uart_*() implemented on this board at all -- no
+   GPS header wired, tracked as part of #46 alongside battery-sense
+   parity. This board's only real UART (Port A, USART2) is already the
+   SBUS input port by default (#55) anyway -- even once a real GPS UART
+   transport exists here, whether it has a genuinely free second port to
+   bind to is a separate, still-open question. */
+#define HELM_HAS_GPS_UART_TRANSPORT 0
 
 /* HELM_SERVO_COUNT: real per-board hardware fact (issue #36) -- see
    matek_h743/board_features.h's own comment for what this gates. 6

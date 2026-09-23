@@ -5,7 +5,6 @@
 #define HELM_HAS_IMU 0
 #define HELM_HAS_BARO 0
 #define HELM_HAS_MAG 0
-#define HELM_HAS_GPS 0
 #define HELM_HAS_BLACKBOX_STORAGE 0
 #define HELM_HAS_BATTERY_SENSE 0
 
@@ -80,6 +79,11 @@
 /* HELM_HAS_SPORT_UART: no hardware on the bench at all -- see
    matek_h743/board_features.h's own comment for what this gates. */
 #define HELM_HAS_SPORT_UART 0
+
+/* HELM_HAS_GPS_UART_TRANSPORT: no hardware on the bench at all -- see
+   matek_h743/board_features.h's own comment for what this gates
+   (issue #56, retiring the old HELM_HAS_GPS flag). */
+#define HELM_HAS_GPS_UART_TRANSPORT 0
 
 /* HELM_SERVO_COUNT: no board on the bench yet, don't guess -- same as
    every other flag in this file (see board.h). */
