@@ -200,8 +200,24 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
    params reinterpreted from bytes that were never written for them.
    Bumped 4->5 for issue #54 (adding the 12 gps/mag/input/telemetry
    port/protocol/source params grows values[] from 35 to 47 u32s) --
-   same shape change, same reasoning. */
-#define PARAMS_VERSION 5U
+   same shape change, same reasoning.
+   Bumped 5->6 for issue #55 -- NOT a values[] size change (still 47
+   u32s), but the same underlying hazard this whole scheme exists to
+   catch: input.port/input.source's meaning changed from "always inert"
+   (#54's PARAM_PORT_UNSET/_SOURCE_NONE) to "must reflect this board's
+   real wiring" (#55's per-board defaults), and any record already
+   persisted under version 5 -- even one written by an unrelated `param
+   set` that happened to touch a totally different param, since every
+   write persists the whole record -- would silently keep the old inert
+   values forever, masking #54's collision check exactly the way a
+   stale flash record silently defeated the version-1 bug above.
+   Bench-caught on this project's own real matek_h743 unit while
+   verifying #55: `telemetry.port e` wrongly succeeded because a record
+   persisted during #54's own bench session still held input.port as
+   PARAM_PORT_UNSET, so nothing was there to collide with. Discarding
+   old records here, not just relying on "freshly-flashed" as #55's own
+   boot-identical requirement assumed, closes that gap for real. */
+#define PARAMS_VERSION 6U
 
 typedef struct {
     uint8_t magic;
