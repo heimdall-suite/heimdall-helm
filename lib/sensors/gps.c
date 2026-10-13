@@ -304,4 +304,4 @@ void gps_get_counters(uint32_t *bytesReceived, uint32_t *validSentences) {
     *validSentences = validSentenceCount;
 }
 
-#endif /* HELM_HAS_GPS */
+#endif /* HELM_HAS_GPS_UART_TRANSPORT */

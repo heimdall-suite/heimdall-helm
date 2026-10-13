@@ -42,6 +42,27 @@ static void diag_pipeline(void) {
     shell_print(line);
 }
 
+/* `rx`: the Input stage's own frame, straight from rx_get_latest() --
+   status plus rx.h's diagnostic-only last_frame_age_ms/frame_loss_count.
+   Tells "receiver wired and sending frames, but with its own failsafe
+   bit set" (age stays small, e.g. no transmitter powered on) apart from
+   "no frames at all" (age keeps growing) -- `pipeline`/`mapping` alone
+   can't, since both show the same FAILSAFE fallback either way. */
+static void diag_rx(void) {
+    RxFrame frame;
+    rx_get_latest(&frame);
+
+    char line[192];
+    int n = snprintf(line, sizeof(line), "rx: status=%s last_frame_age_ms=%lu frame_loss_count=%lu ch=[",
+                     frame.status == RX_STATUS_OK ? "OK" : "FAILSAFE", (unsigned long)frame.last_frame_age_ms,
+                     (unsigned long)frame.frame_loss_count);
+    for (int i = 0; i < RX_MAX_CHANNELS && n < (int)sizeof(line); i++) {
+        n += snprintf(line + n, sizeof(line) - n, "%s%u", i == 0 ? "" : " ", frame.channels[i]);
+    }
+    snprintf(line + n, sizeof(line) - n, "]\r\n");
+    shell_print(line);
+}
+
 /* `mapping`: dumps the mapping stage's own output (issue #34) -- the
    final `pipeline` dump above can't show this, since output.c still just
    copies ControlFrame's channels[] through unchanged (#36 hasn't landed),
@@ -146,6 +167,10 @@ static const char *telemetry_field_name(TelemetryField field) {
             return "gps_speed_mps";
         case TELEM_FIELD_GPS_SATELLITES:
             return "gps_sats";
+        case TELEM_FIELD_PITCH_MODE:
+            return "pitch_mode";
+        case TELEM_FIELD_PITCH_TARGET:
+            return "pitch_target";
         case TELEM_FIELD_COUNT:
             break;
     }
@@ -292,6 +317,8 @@ static void diag_baro(void) {
 void diag_dispatch(const char *args) {
     if (strcmp(args, "pipeline") == 0) {
         diag_pipeline();
+    } else if (strcmp(args, "rx") == 0) {
+        diag_rx();
     } else if (strcmp(args, "mapping") == 0) {
         diag_mapping();
     } else if (strcmp(args, "control") == 0) {
@@ -317,7 +344,7 @@ void diag_dispatch(const char *args) {
         diag_gps();
 #endif
     } else {
-        shell_print("usage: diag <subcommand> -- available: pipeline, mapping, control, wedge, telemetry"
+        shell_print("usage: diag <subcommand> -- available: pipeline, rx, mapping, control, wedge, telemetry"
 #if HELM_HAS_SPORT_UART
                     ", sport"
 #endif
