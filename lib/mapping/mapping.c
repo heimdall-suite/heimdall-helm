@@ -20,12 +20,13 @@
    per-transmitter config choice, not a project-wide hardware fact, and
    this issue's own scope note already says so ("a first pass could
    hardcode a table to prove the mechanism before wiring it to param
-   storage"). CH9 is just whichever real 3-position switch was on hand to
-   bench-test the banding logic below against; it carries no more
-   permanence than CH2 would have. Real per-user channel assignment is
-   later, params-backed work -- not decided here. */
-#define MAPPING_PITCH_MODE_CHANNEL_INDEX 8   /* CH9 */
-#define MAPPING_PITCH_TARGET_CHANNEL_INDEX 3 /* CH4 */
+   storage"). CH9 mode (3-position switch) / CH12 target
+   (slider) is just the user's current transmitter setup (2026-10-13
+   bench session; target was CH4 before), and
+   carries no more permanence than CH2 would have. Real per-user channel
+   assignment is later, params-backed work -- not decided here. */
+#define MAPPING_PITCH_MODE_CHANNEL_INDEX 8    /* CH9 */
+#define MAPPING_PITCH_TARGET_CHANNEL_INDEX 11 /* CH12 */
 
 /* Raw-tick range/center is rx.h's RX_CHANNEL_RAW_MIN/MAX/CENTER now --
    promoted there (issue #36) since output.c needs the same center value
