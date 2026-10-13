@@ -76,12 +76,28 @@
    altitude/vario sensors report a derived altitude, not raw station
    pressure, and deriving true altitude needs a reference-pressure/
    calibration design that doesn't exist yet (explicitly out of scope
-   for this issue) -- so this stays a DIY ID, next one up from
-   SPORT_TEST_DATA_ID in the same 0x51xx block, whole Pascals (plenty of
-   resolution for "is this sane," no consumer/Lua script parses it yet,
-   same as TEST's own value). */
+   for this issue) -- so this stays a DIY ID in the same 0x51xx block,
+   whole Pascals (plenty of resolution for "is this sane").
+
+   COMPAT SHIM, tracked in issue #63: 0x5106, not 0x5101 -- this whole
+   0x51xx block mirrors aoa-boat-controller's own ID map (baro was 0x5106
+   there too), so a radio still set up for that firmware (stored sensors
+   + its aoamon.lua) decodes Helm correctly. Pressure originally went out
+   on 0x5101, which that radio setup unpacks as AoA mode+target -- bench
+   2026-10-13 showed a constant "LIMIT, 364.7 deg" that was really
+   102006 Pa. */
 #define SPORT_BARO_TEMPERATURE_DATA_ID 0x0400
-#define SPORT_BARO_PRESSURE_DATA_ID 0x5101
+#define SPORT_BARO_PRESSURE_DATA_ID 0x5106
+
+/* COMPAT SHIM, tracked in issue #63 -- aoa-boat-controller's
+   kSportModeTargetDataId, same wire shape: high 16 bits = pitch mode
+   (0=OFF/1=LIMIT/2=ACTIVE, same order as mapping.h's PitchMode), low 16
+   bits = (int16)(TELEM_FIELD_PITCH_TARGET * 100) -- centidegrees for
+   LIMIT/ACTIVE, centipercent of slider travel for OFF. 0x5102-0x5105 and
+   0x5107 (PID gains, servo endpoints, flash %, mag heading there) are
+   left unused on purpose so nothing else lands on an ID that radio setup
+   already reads a different meaning into -- see #63. */
+#define SPORT_AOA_MODE_TARGET_DATA_ID 0x5101
 
 /* Issue #41 -- native FrSky data IDs for battery/GPS, verified against
    Betaflight's own telemetry/smartport.c (src/main/telemetry/smartport.c,
@@ -112,6 +128,8 @@ typedef enum {
     SPORT_ENCODE_SPEED_KNOTS_X1000, /* m/s -> knots*1000 */
     SPORT_ENCODE_GPS_LAT,           /* degrees -> FrSky packed lat/lon, bit31 clear */
     SPORT_ENCODE_GPS_LON,           /* degrees -> FrSky packed lat/lon, bit31 set */
+    SPORT_ENCODE_AOA_MODE_TARGET,   /* pitch mode -> mode<<16 | target*100, reading
+                                        TELEM_FIELD_PITCH_TARGET itself (#63) */
 } SportEncodeKind;
 
 /* One entry per field this board's single physical ID (SPORT_PHYSICAL_ID)
@@ -130,13 +148,14 @@ static const struct {
     SportEncodeKind encode;
 } sport_fields[] = {
     {TELEM_FIELD_TEST, SPORT_TEST_DATA_ID, SPORT_ENCODE_RAW},
+    {TELEM_FIELD_PITCH_MODE, SPORT_AOA_MODE_TARGET_DATA_ID, SPORT_ENCODE_AOA_MODE_TARGET},
     {TELEM_FIELD_BARO_PRESSURE, SPORT_BARO_PRESSURE_DATA_ID, SPORT_ENCODE_RAW},
     {TELEM_FIELD_BARO_TEMPERATURE, SPORT_BARO_TEMPERATURE_DATA_ID, SPORT_ENCODE_RAW},
 #if HELM_HAS_BATTERY_SENSE
     {TELEM_FIELD_BATTERY_VOLTAGE, SPORT_VFAS_DATA_ID, SPORT_ENCODE_CENTIVOLTS},
     {TELEM_FIELD_BATTERY_CURRENT, SPORT_CURRENT_DATA_ID, SPORT_ENCODE_DECIAMPS},
 #endif
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
     {TELEM_FIELD_GPS_LATITUDE, SPORT_LATLONG_DATA_ID, SPORT_ENCODE_GPS_LAT},
     {TELEM_FIELD_GPS_LONGITUDE, SPORT_LATLONG_DATA_ID, SPORT_ENCODE_GPS_LON},
     {TELEM_FIELD_GPS_ALTITUDE, SPORT_GPS_ALT_DATA_ID, SPORT_ENCODE_ALT_CM},
@@ -195,6 +214,16 @@ static int32_t sport_encode_value(SportEncodeKind encode, float value) {
         return (int32_t)sport_encode_gps_coord(value, false);
     case SPORT_ENCODE_GPS_LON:
         return (int32_t)sport_encode_gps_coord(value, true);
+    case SPORT_ENCODE_AOA_MODE_TARGET: {
+        /* Two fields, one ID -- the only encoder that reads a second
+           field itself rather than taking it as value. Target is always
+           OK (telemetry.c), so no status check needed for it here. */
+        TelemetryEntry target;
+        telemetry_get(TELEM_FIELD_PITCH_TARGET, &target);
+        uint16_t const mode = (uint16_t)(int16_t)value;
+        uint16_t const targetX100 = (uint16_t)(int16_t)(target.value * 100.0f);
+        return (int32_t)(((uint32_t)mode << 16) | targetX100);
+    }
     case SPORT_ENCODE_RAW:
     default:
         return (int32_t)value;

@@ -11,9 +11,10 @@
 #if HELM_HAS_BATTERY_SENSE
 #include "battery.h"
 #endif
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
 #include "gps.h"
 #endif
+#include "mapping.h"
 
 /* Placeholder task period -- pure plumbing stub (issue #16), same as
    every other stage's stub period (e.g. RX_TASK_PERIOD_MS): no real
@@ -26,6 +27,16 @@
 #define TELEMETRY_GATHER_PERIOD_MS 100
 #define TELEMETRY_GATHER_PRIORITY 1
 
+/* COMPAT SHIM, tracked in issue #63 -- full pitch-target slider travel
+   reported as [0, this] degrees, aoa-boat-controller's own
+   AoaRange::maxAoaDeg default (lib/Config/H743/AoaRangeConfig), so the
+   existing radio setup (aoamon.lua + stored sensors) shows the same
+   numbers it did against that firmware. Display-only: Helm's control
+   stage has no real degree units yet (#50), so nothing here feeds back
+   into control. Replace with the control stage's real target once it
+   has units -- see #63's checklist. */
+#define TELEMETRY_AOA_TARGET_MAX_DEG 15.0f
+
 /* One length-1 overwrite/peek queue per field -- same latest-value
    primitive used everywhere else in this codebase (see
    .docs/architecture/module-architecture.md's "Inter-stage data"
@@ -33,7 +44,7 @@
    update can never race a concurrent read of a different field. */
 static QueueHandle_t field_queues[TELEM_FIELD_COUNT];
 
-#if HELM_HAS_BARO || HELM_HAS_BATTERY_SENSE || HELM_HAS_GPS
+#if HELM_HAS_BARO || HELM_HAS_BATTERY_SENSE || HELM_HAS_GPS_UART_TRANSPORT
 /* Explicit switch, not a cast -- SensorStatus and TelemetryStatus share
    the same OK/STALE/FAILED tiers but are deliberately not the same type
    (sensors.h's own comment: sensor drivers and telemetry are independent
@@ -53,7 +64,7 @@ static TelemetryStatus sensor_status_to_telemetry_status(SensorStatus status) {
     }
     return TELEM_STATUS_FAILED;
 }
-#endif /* HELM_HAS_BARO || HELM_HAS_BATTERY_SENSE || HELM_HAS_GPS */
+#endif /* HELM_HAS_BARO || HELM_HAS_BATTERY_SENSE || HELM_HAS_GPS_UART_TRANSPORT */
 
 static void telemetry_gather_task(void *arg) {
     (void)arg;
@@ -92,7 +103,7 @@ static void telemetry_gather_task(void *arg) {
         telemetry_set(TELEM_FIELD_BATTERY_CURRENT, batterySample.current_a, batteryStatus);
 #endif
 
-#if HELM_HAS_GPS
+#if HELM_HAS_GPS_UART_TRANSPORT
         GpsFix gpsFix;
         gps_get_latest(&gpsFix);
         TelemetryStatus const gpsStatus = sensor_status_to_telemetry_status(gpsFix.status);
@@ -102,6 +113,28 @@ static void telemetry_gather_task(void *arg) {
         telemetry_set(TELEM_FIELD_GPS_SPEED, gpsFix.speed_mps, gpsStatus);
         telemetry_set(TELEM_FIELD_GPS_SATELLITES, (float)gpsFix.satellites, gpsStatus);
 #endif
+
+        /* Issue #63 -- same per-mode reinterpretation aoa-boat-controller's
+           BoatControlLoop used for its telemetry value: percent of slider
+           travel in OFF (a degrees figure means nothing while the slider is
+           a plain passthrough), degrees in LIMIT/ACTIVE. Always OK, not
+           FAILED, on RX failsafe -- mapping.c already forces OFF/center
+           there, and that IS the controller's real state, not an absent
+           value. */
+        MappingFrame mapping;
+        mapping_get_latest(&mapping);
+        uint16_t raw = mapping.pitchTarget;
+        if (raw < RX_CHANNEL_RAW_MIN) {
+            raw = RX_CHANNEL_RAW_MIN;
+        } else if (raw > RX_CHANNEL_RAW_MAX) {
+            raw = RX_CHANNEL_RAW_MAX;
+        }
+        float const fraction =
+            (float)(raw - RX_CHANNEL_RAW_MIN) / (float)(RX_CHANNEL_RAW_MAX - RX_CHANNEL_RAW_MIN);
+        float const target =
+            mapping.pitchMode == PITCH_MODE_OFF ? fraction * 100.0f : fraction * TELEMETRY_AOA_TARGET_MAX_DEG;
+        telemetry_set(TELEM_FIELD_PITCH_MODE, (float)mapping.pitchMode, TELEM_STATUS_OK);
+        telemetry_set(TELEM_FIELD_PITCH_TARGET, target, TELEM_STATUS_OK);
     }
 }
 

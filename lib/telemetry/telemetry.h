@@ -51,7 +51,7 @@ typedef enum {
     TELEM_FIELD_BATTERY_CURRENT, /* pack current, amps */
 
     /* Issue #41 -- real values, pulled from lib/sensors/gps.h's
-       gps_get_latest() (#40), only on boards with HELM_HAS_GPS set.
+       gps_get_latest() (#40), only on boards with HELM_HAS_GPS_UART_TRANSPORT set.
        FAILED (not stale/zeroed) whenever the module is unpowered/
        unplugged or hasn't resolved a fix yet -- gps.c's own
        never-fabricate-a-value discipline propagates straight through
@@ -64,6 +64,15 @@ typedef enum {
     TELEM_FIELD_GPS_SATELLITES, /* satellites used in fix -- CLI diag only, no
                                     native S.Port slot exists for this (sport.c's
                                     own comment), not sent over the air */
+
+    /* Issue #63 -- mapping stage's pitch mode/target (mapping_get_latest()),
+       always present (no sensor behind it). Exists for sport.c's
+       aoa-boat-controller-compatible packed 0x5101 sensor, see #63 for
+       why that ID map is mirrored rather than Helm's own. */
+    TELEM_FIELD_PITCH_MODE,   /* PitchMode as a number: 0=OFF/1=LIMIT/2=ACTIVE */
+    TELEM_FIELD_PITCH_TARGET, /* degrees for LIMIT/ACTIVE, percent of slider travel
+                                  for OFF -- display units only, see telemetry.c's
+                                  TELEMETRY_AOA_TARGET_MAX_DEG */
 
     TELEM_FIELD_COUNT,
 } TelemetryField;

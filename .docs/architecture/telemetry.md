@@ -171,7 +171,21 @@ link stats often, battery rarely), gated only by "is the wire free":
 Resolved since this list was last written: S.Port sensor-ID assignments
 per field are decided (`sport.c`'s `sport_fields[]`, real native FrSky
 IDs where one exists, DIY IDs otherwise -- see that file's own
-comments), and the `aoa-boat-controller` `aoamon.lua`-style
+comments). The DIY `0x51xx` block deliberately mirrors
+`aoa-boat-controller`'s own ID map (#63), so a radio still set up for
+that firmware (stored sensors + `aoamon.lua`) reads Helm correctly:
+
+| ID | Value |
+|---|---|
+| `0x5100` | heartbeat (uptime seconds) |
+| `0x5101` | packed `mode << 16 \| (int16)(target * 100)` -- mode 0=OFF/1=LIMIT/2=ACTIVE; target is degrees (LIMIT/ACTIVE, display-only 0-15 deg scale) or percent of slider travel (OFF) |
+| `0x5106` | baro pressure, whole Pa |
+| `0x5102`-`0x5105`, `0x5107` | unused on purpose -- that radio setup reads its own meaning into them |
+
+Native IDs in use: `0x0400` (T1, baro temp), `0x0210` (VFAS), `0x0200`
+(current), `0x0800`/`0x0820`/`0x0830` (GPS lat-lon/alt/speed). Pick any
+new DIY ID against #63 first -- a collision shows up on the radio as a
+plausible-looking wrong value, not an error. The `aoa-boat-controller` `aoamon.lua`-style
 config-over-telemetry precedent has a first real answer: S.Port's
 push/write direction (above, #42) ties directly into the
 parameter-persistence system (#32/#39), not a separate mechanism.
