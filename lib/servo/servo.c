@@ -20,10 +20,8 @@
 #endif
 
 /* Defined in src/main.c, called on an unrecoverable HAL init failure --
-   same pattern board.c's own HAL init calls already use, just with an
-   explicit declaration here rather than relying on an implicit one
-   (board.c's own call sites predate this file and still warn on that;
-   out of scope to fix there for this issue). */
+   explicit declaration rather than an implicit one (board.c and
+   usb_cdc/stm32f1.c now declare it the same way). */
 extern void Error_Handler(void);
 
 /* See mapping.c's own comment -- same placeholder-period-and-priority

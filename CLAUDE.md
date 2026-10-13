@@ -59,7 +59,12 @@ Build: `pio run -e <matek_h743|afroflight32|nexus_xr>` (from repo root;
   comments for the multi-target wiring approach and FPU-flag wrinkles
   found during bring-up (don't duplicate FPU flags between `build_flags`
   and `custom_helm_fpu_flags` — see `scripts/add_freertos.py`'s comment
-  for why that already caused a real bug once)
+  for why that already caused a real bug once). Every env builds with
+  `-Werror=undef` and `-Werror=implicit-function-declaration` -- a
+  misspelled/renamed `HELM_*` flag in `#if` fails the build instead of
+  silently compiling a feature out; if a vendor header trips it, define
+  that macro to `0` in the env (see matek_h743's) rather than dropping
+  the flag
 - `boards/<target>/` — per-board `board.c`/`board.h` (clock config,
   `board_init()`), `board_features.h` (capability flags), `FreeRTOSConfig.h`
 - `lib/` — chip/protocol-based drivers and hardware-independent logic,
