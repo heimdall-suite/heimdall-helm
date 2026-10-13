@@ -35,6 +35,9 @@ with per-slot failsafe/reverse/endpoint trim (issues #36/#37);
 driving a real PWM servo driver with a persisted, per-boat frame-rate
 choice (50/250/333Hz), bench-verified against real hardware with an
 external USB logic analyzer, not just CLI-reported values (issue #31).
+Output trim is params-backed and settable live (issue #39), and S.Port's
+DIY IDs deliberately mirror aoa-boat-controller's map (issue #63) --
+check that issue before picking any new S.Port data ID.
 Real per-axis control-loop math (PID/attitude hold) and a genuinely
 configurable, params-backed function/output mapping table (today's
 tables are hardcoded, proving the mechanism, not final per-boat config)
