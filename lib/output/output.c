@@ -324,6 +324,23 @@ static uint16_t scale_slot(int32_t raw, int32_t srcMin, int32_t srcCenter, int32
     return (uint16_t)(dstCenter + ((raw - srcCenter) * (dstMax - dstCenter)) / srcSpan);
 }
 
+/* Issue #47 backstop: min/max are the slot's physical travel limits, and
+   trim is runtime-settable (CLI/S.Port, #39/#42) -- a center set outside
+   [min, max] must not be able to command over-travel, neither through
+   scaling nor through OUTPUT_FAILSAFE_HOLD's boot-time center seed.
+   Order-agnostic in case min > max was set. */
+static uint16_t clamp_to_travel(const OutputSlotTrim *trim, uint16_t value) {
+    uint16_t const lo = trim->min < trim->max ? trim->min : trim->max;
+    uint16_t const hi = trim->min < trim->max ? trim->max : trim->min;
+    if (value < lo) {
+        return lo;
+    }
+    if (value > hi) {
+        return hi;
+    }
+    return value;
+}
+
 /* Resolves one slot's final output value: substitutes per its own
    failsafe policy if its source has nothing valid right now, else scales
    the raw source value through this slot's own endpoint/subtrim
@@ -361,9 +378,23 @@ static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) 
        2000 reversed slot sat at 1450 with the stick centered while its
        fixed failsafe was 1550 -- a 100us jump on link loss (bench
        2026-10-13). */
-    uint16_t const finalValue =
+    /* Issue #47: scale_slot() is a straight-line extrapolation, so a raw
+       value outside [srcMin, srcMax] (afroflight32's SBUS stub reports a
+       flat 0; a glitching receiver could too) drove a slot past its own
+       endpoint -- bench-seen at 2115 on a 2000-max slot. Clamping the
+       input keeps the piecewise result inside the configured points by
+       construction. */
+    if (rawValue < srcMin) {
+        rawValue = srcMin;
+    } else if (rawValue > srcMax) {
+        rawValue = srcMax;
+    }
+
+    uint16_t finalValue =
         trim->reversed ? scale_slot(rawValue, srcMin, srcCenter, srcMax, trim->max, trim->center, trim->min)
                        : scale_slot(rawValue, srcMin, srcCenter, srcMax, trim->min, trim->center, trim->max);
+
+    finalValue = clamp_to_travel(trim, finalValue);
 
     lastGoodValue[slot] = finalValue;
     return finalValue;
@@ -437,7 +468,7 @@ void output_start(void) {
     OutputFrame initial = {0};
     initial.status = RX_STATUS_FAILSAFE;
     for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
-        lastGoodValue[i] = slotTrim[i].center;
+        lastGoodValue[i] = clamp_to_travel(&slotTrim[i], slotTrim[i].center);
         initial.servos[i] = resolve_slot(i, false, 0);
     }
     xQueueOverwrite(output_queue, &initial);
