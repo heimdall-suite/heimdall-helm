@@ -1,5 +1,6 @@
 #include "diag.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include "FreeRTOS.h"
@@ -213,19 +214,37 @@ static const char *sensor_status_name(SensorStatus status) {
    written to it. Useful for #17's synthetic-value proof and beyond:
    confirms telemetry_set()/telemetry_get() round-trip on real hardware
    without needing a protocol adapter (#18/#19) wired up yet. Value
-   printed truncated to an integer, not %f -- this toolchain's
+   printed as fixed-point via integer math, not %f -- this toolchain's
    snprintf() float support isn't confirmed (see .agents/AGENTS.md's
-   no-fabrication standard; nothing else in this codebase prints a float
-   yet either), and every field is still a placeholder anyway. */
+   no-fabrication standard). 2 decimals for every field except GPS
+   lat/lon, which need 5 (~1m) to be useful; float itself only carries
+   ~7 significant digits, so more would just print noise. */
+static void format_fixed(char *buf, size_t size, float value, bool fiveDecimals) {
+    uint32_t const scale = fiveDecimals ? 100000U : 100U;
+    float const magnitude = value < 0.0f ? -value : value;
+    uint32_t const scaled = (uint32_t)(magnitude * (float)scale + 0.5f);
+    if (fiveDecimals) {
+        snprintf(buf, size, "%s%lu.%05lu", value < 0.0f ? "-" : "", (unsigned long)(scaled / scale),
+                 (unsigned long)(scaled % scale));
+    } else {
+        snprintf(buf, size, "%s%lu.%02lu", value < 0.0f ? "-" : "", (unsigned long)(scaled / scale),
+                 (unsigned long)(scaled % scale));
+    }
+}
+
 static void diag_telemetry(void) {
     for (int i = 0; i < TELEM_FIELD_COUNT; i++) {
         TelemetryEntry entry;
         telemetry_get((TelemetryField)i, &entry);
 
+        char value[24];
+        format_fixed(value, sizeof(value), entry.value,
+                     i == TELEM_FIELD_GPS_LATITUDE || i == TELEM_FIELD_GPS_LONGITUDE);
+
         uint32_t now_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
         char line[96];
-        snprintf(line, sizeof(line), "telemetry: %-8s value=%ld status=%-6s age_ms=%lu\r\n",
-                 telemetry_field_name((TelemetryField)i), (long)entry.value,
+        snprintf(line, sizeof(line), "telemetry: %-8s value=%s status=%-6s age_ms=%lu\r\n",
+                 telemetry_field_name((TelemetryField)i), value,
                  telemetry_status_name(entry.status),
                  (unsigned long)(now_ms - entry.last_updated_ms));
         shell_print(line);
