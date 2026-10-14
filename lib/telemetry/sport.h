@@ -43,4 +43,9 @@ void sport_start(void);
    site and sport.c's guard around this function's definition. */
 void sport_get_counters(uint32_t *pollMarkers, uint32_t *pollMatches);
 
+/* Trim pushes (#42) applied vs. rejected by param_set_output()'s
+   validation (#65) or for targeting a non-trim param -- the only way to
+   see a rejected push, since nothing replies to the radio yet. */
+void sport_get_push_counters(uint32_t *applied, uint32_t *rejected);
+
 #endif /* HELM_TELEMETRY_SPORT_H */
