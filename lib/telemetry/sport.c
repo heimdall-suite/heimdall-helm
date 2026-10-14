@@ -341,6 +341,8 @@ static uint16_t sportPushChecksum;
 /* Bench diagnostics -- see sport.h's own comment. */
 static uint32_t sportPollMarkerCount;
 static uint32_t sportPollMatchCount;
+static uint32_t sportPushAppliedCount;
+static uint32_t sportPushRejectedCount;
 
 #if HELM_FEATURE_PARAMS_PERSIST
 /* Applies one successfully-decoded, checksum-valid SPORT_SET_PARAM_
@@ -359,10 +361,18 @@ static uint32_t sportPollMatchCount;
    (#39 follow-up) means the servo itself visibly moving is the
    confirmation, same as a CLI `param set` today. */
 static void sport_apply_push(uint16_t valueId, uint32_t data) {
-    if (valueId < PARAM_OUTPUT_SLOT_BASE || valueId >= PARAM_COUNT) {
+    if (!param_id_is_output_field((ParamId)valueId)) {
+        sportPushRejectedCount++;
         return;
     }
-    param_set_u32((ParamId)valueId, data);
+    /* #65 -- same validated setter the CLI uses. No reply channel exists
+       yet to tell the radio why (see above), so a rejection is only
+       visible via `diag sport`'s push_rejected counter. */
+    if (param_set_output((ParamId)valueId, data) == PARAM_OUTPUT_OK) {
+        sportPushAppliedCount++;
+    } else {
+        sportPushRejectedCount++;
+    }
 }
 #endif
 
@@ -441,6 +451,11 @@ static bool sport_receive_byte(uint8_t b) {
 void sport_get_counters(uint32_t *pollMarkers, uint32_t *pollMatches) {
     *pollMarkers = sportPollMarkerCount;
     *pollMatches = sportPollMatchCount;
+}
+
+void sport_get_push_counters(uint32_t *applied, uint32_t *rejected) {
+    *applied = sportPushAppliedCount;
+    *rejected = sportPushRejectedCount;
 }
 
 /* Round-robin index into sport_fields[] -- advances exactly once per poll

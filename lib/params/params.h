@@ -240,10 +240,43 @@ bool param_port_exists(uint8_t portIndex, ParamPortTransport transport);
    Rejects (returns false, nothing written/persisted) if either check
    fails, same all-or-nothing contract as param_set_u32(); also returns
    false if the underlying param_set_u32() call itself fails (flash write
-   error). This is the only validated setter in this store -- every other
-   param (including this same subsystem's own `.protocol`/`.source`)
-   still goes through plain param_set_u32(), unvalidated, same as before
-   this issue. */
+   error). One of two validated setters in this store (the other is
+   param_set_output() below, #65) -- every other param (including this
+   same subsystem's own `.protocol`/`.source`) still goes through plain
+   param_set_u32(), unvalidated. */
 bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport);
+
+/* Absolute pulse limits for every out<N>.min/center/max (#65) -- the
+   full electrical range of the servos actually used on this project's
+   boats (AGFRC B24CLM: 500-2500us at up to 333Hz; standard Futaba
+   analog/digital sit well inside it; Futaba SR/UR-mode pulses don't, and
+   are deliberately unsupported). 2500 also stays under the shortest PWM
+   frame servo.c can run (333Hz -> 3000us), so a valid pulse can never
+   fill a whole frame. These guard the electronics only -- each slot's
+   own min/max is what keeps a linkage off its mechanical stops. */
+#define PARAM_OUTPUT_PULSE_MIN_US 500U
+#define PARAM_OUTPUT_PULSE_MAX_US 2500U
+
+typedef enum {
+    PARAM_OUTPUT_OK,
+    PARAM_OUTPUT_REJECT_RANGE,   /* min/center/max outside 500-2500us */
+    PARAM_OUTPUT_REJECT_ORDER,   /* would break min <= center <= max for this slot */
+    PARAM_OUTPUT_REJECT_BOOL,    /* reversed not 0/1 */
+    PARAM_OUTPUT_REJECT_WRITE,   /* valid, but param_set_u32() failed (flash write) */
+} ParamOutputResult;
+
+/* True if `id` is one of the out<N>.min/center/max/reversed params. */
+bool param_id_is_output_field(ParamId id);
+
+/* Validated setter for the out<N>.* trim block -- same "check first,
+   then the plain param_set_u32() underneath" shape as param_set_port().
+   Checks the absolute pulse limits above, min <= center <= max against
+   this slot's OTHER two current values, and reversed in {0, 1}. Nothing
+   is written unless the result is PARAM_OUTPUT_OK. Every transport that
+   can write trim (CLI `param set`, S.Port push #42) goes through this,
+   so a bad value is rejected the same way regardless of where it came
+   from. Note the order check means moving a whole range past its old
+   values takes the right sequence (e.g. raise max before center). */
+ParamOutputResult param_set_output(ParamId id, uint32_t value);
 
 #endif /* HELM_PARAMS_H */
