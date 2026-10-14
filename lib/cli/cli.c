@@ -196,6 +196,32 @@ static void cmd_param(const char *args) {
         }
 
         uint32_t const value = (uint32_t)strtoul(valueStr, NULL, 0);
+
+        /* #65 -- out<N>.* trim goes through the validated setter, same
+           reasoning as `.port` above: an out-of-range or out-of-order
+           value must be rejected here, not just clamped later. */
+        if (param_id_is_output_field((ParamId)id)) {
+            switch (param_set_output((ParamId)id, value)) {
+            case PARAM_OUTPUT_OK:
+                param_print_value((ParamId)id);
+                return;
+            case PARAM_OUTPUT_REJECT_RANGE:
+                shell_print("REJECTED -- pulse must be 500-2500us\r\n");
+                return;
+            case PARAM_OUTPUT_REJECT_ORDER:
+                shell_print("REJECTED -- would break min <= center <= max for this slot "
+                            "(move the limit on the far side first)\r\n");
+                return;
+            case PARAM_OUTPUT_REJECT_BOOL:
+                shell_print("REJECTED -- reversed must be 0 or 1\r\n");
+                return;
+            case PARAM_OUTPUT_REJECT_WRITE:
+                shell_print("FAILED to persist -- flash write error, value NOT saved\r\n");
+                return;
+            }
+            return;
+        }
+
         if (!param_set_u32((ParamId)id, value)) {
             shell_print("FAILED to persist -- flash write error, value NOT saved\r\n");
             return;

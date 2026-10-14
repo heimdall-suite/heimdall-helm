@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <string.h>
 
+/* Defined in src/main.c -- same explicit declaration lib/servo/servo.c
+   uses; implicit declarations are a build error now (platformio.ini). */
+extern void Error_Handler(void);
+
 /* Clock tree: 8MHz HSE, PLL1 -> 480MHz (REV_ID_V silicon) or 400MHz
    (older silicon), HCLK = sysclk/2, APB1-4 = HCLK/2.
 

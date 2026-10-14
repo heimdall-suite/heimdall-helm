@@ -257,12 +257,14 @@ static void diag_telemetry(void) {
    count: tells "receiver isn't polling at all" apart from "polling, but
    our physical ID never matches" apart from "genuinely working". */
 static void diag_sport(void) {
-    uint32_t markers, matches;
+    uint32_t markers, matches, pushApplied, pushRejected;
     sport_get_counters(&markers, &matches);
+    sport_get_push_counters(&pushApplied, &pushRejected);
 
-    char line[64];
-    snprintf(line, sizeof(line), "sport: poll_markers=%lu poll_matches=%lu\r\n", (unsigned long)markers,
-             (unsigned long)matches);
+    char line[112];
+    snprintf(line, sizeof(line), "sport: poll_markers=%lu poll_matches=%lu push_applied=%lu push_rejected=%lu\r\n",
+             (unsigned long)markers, (unsigned long)matches, (unsigned long)pushApplied,
+             (unsigned long)pushRejected);
     shell_print(line);
 }
 #endif
