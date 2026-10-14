@@ -207,7 +207,8 @@ slot a signal lands on.
 
 - **Direction/reverse**: some physical servos are mounted such that a
   normal command drives them backwards from what's intended. Each slot
-  carries its own independent reverse flag. Reverse mirrors around the
+  carries its own independent reverse flag (function-fed slots only —
+  see passthrough below). Reverse mirrors around the
   slot's own **center**, not the midpoint of min/max: source min lands on
   output max and vice versa, while center (subtrim) stays put, so a
   reversed slot with an asymmetric center still rests at that center
@@ -215,9 +216,24 @@ slot a signal lands on.
 - **Endpoint/subtrim (min/center/max)**: each slot has its own physical
   travel range. A source's value is scaled into that range piecewise —
   source-min→slot-min, source-center→slot-center, source-max→slot-max,
-  as two independent linear segments — so trimming the center doesn't
-  require min/max to stay symmetric around it (the same endpoint+subtrim
-  convention real RC transmitters/flight controllers use).
+  as two independent linear segments. All three are absolute µs, and
+  center *is* the subtrim (there's no separate offset).
+  **The asymmetry this gives is intended, not a bug.** With e.g.
+  900/1520/1600 the stick's lower half covers 620 µs and its upper half
+  80 µs. An aircraft surface wants a neutral point with equal authority
+  either way; a boat's trim tab has no meaningful neutral, only the
+  travel its linkage allows on each side, and this lets the full stick
+  use exactly that.
+- **Passthrough is pure passthrough** (owner's rule): whatever comes in
+  goes out. A passthrough slot ignores min/center/max and reverse
+  entirely; raw ticks become µs with the standard SBUS/CRSF conversion
+  (µs = 1500 + (raw − 992) × 5/8, so 172/992/1811 → 988/1500/2012 and the
+  full 0–2047 → 880–2159, letting extended transmitter endpoints through).
+  Channels that want symmetric authority (throttle, rudder, pipe
+  adjustment) are passthrough and get their endpoints, subtrim, reverse
+  and expo in the transmitter. Only the slot's failsafe policy and an
+  absolute 500–2500 µs electrical guard apply. min/center/max/reverse
+  (the `out<N>.*` params) only affect function-fed slots, such as Pitch.
 - A **function's output is not guaranteed to share passthrough's known
   raw-channel range** — in the general case a function could be purely
   sensor-driven, using zero or more RX inputs only to alter its behavior

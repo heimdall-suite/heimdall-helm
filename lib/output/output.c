@@ -90,13 +90,12 @@ typedef struct {
    channel. Every slot's output range is the standard hobby-servo
    1000/1500/2000us endpoint+center (issue #31 -- real physical units
    now that a real PWM driver exists to receive them, not the placeholder
-   raw-tick-like convention #36/#37 used before this). S1/OUT1 is
-   deliberately configured reversed, fixed-failsafe, AND with a modest
-   asymmetric subtrim (1000/1550/2000, not a plain symmetric 1500
-   center) -- safe, plausible real servo-trim numbers, not the wild
-   demo range #37 used before real PWM existed to actually receive
-   them, chosen so this pass still exercises piecewise scaling, not just
-   an identity passthrough that happens to look right by coincidence.
+   raw-tick-like convention #36/#37 used before this). Slot 0's
+   reversed + 1000/1550/2000 values are a #37 bench fixture from before
+   passthrough became pure passthrough (2026-10-14) -- inert now, since
+   passthrough slots ignore outputMin/Center/Max/reversed entirely
+   (resolve_slot()). Its FIXED 1550 failsafe still applies: failsafe is
+   the one thing the transmitter can't handle for a passthrough channel.
 
    Per-board table, not one shared array -- HELM_SERVO_COUNT differs
    (board_features.h), and output.c is a single shared file (no
@@ -324,6 +323,33 @@ static uint16_t scale_slot(int32_t raw, int32_t srcMin, int32_t srcCenter, int32
     return (uint16_t)(dstCenter + ((raw - srcCenter) * (dstMax - dstCenter)) / srcSpan);
 }
 
+/* Absolute electrical guard for passthrough slots -- same 500-2500us as
+   params.h's PARAM_OUTPUT_PULSE_MIN/MAX_US (kept local: lib/params isn't
+   built on every board). Full SBUS (0-2047 -> 880-2159us) is already
+   inside it; this only catches a corrupt raw value. */
+#define OUTPUT_PASSTHROUGH_ABS_MIN_US 500
+#define OUTPUT_PASSTHROUGH_ABS_MAX_US 2500
+#if HELM_FEATURE_PARAMS_PERSIST
+_Static_assert(OUTPUT_PASSTHROUGH_ABS_MIN_US == PARAM_OUTPUT_PULSE_MIN_US &&
+                   OUTPUT_PASSTHROUGH_ABS_MAX_US == PARAM_OUTPUT_PULSE_MAX_US,
+               "passthrough guard must match params.h's trim limits");
+#endif
+
+/* Raw RX ticks -> microseconds with the standard SBUS/CRSF conversion
+   EdgeTX/Betaflight use (rx.h's own 172/992/1811 == 988/1500/2012us):
+   us = 1500 + (raw - 992) * 5/8. Linear across the WHOLE raw range, not
+   just 172-1811, so a transmitter's extended (>100%) endpoints come
+   through untouched. */
+static uint16_t passthrough_us(uint16_t raw) {
+    int32_t us = OUTPUT_SERVO_CENTER_US + (((int32_t)raw - (int32_t)RX_CHANNEL_RAW_CENTER) * 5) / 8;
+    if (us < OUTPUT_PASSTHROUGH_ABS_MIN_US) {
+        us = OUTPUT_PASSTHROUGH_ABS_MIN_US;
+    } else if (us > OUTPUT_PASSTHROUGH_ABS_MAX_US) {
+        us = OUTPUT_PASSTHROUGH_ABS_MAX_US;
+    }
+    return (uint16_t)us;
+}
+
 /* Issue #47 backstop: min/max are the slot's physical travel limits, and
    trim is runtime-settable (CLI/S.Port, #39/#42) -- a center set outside
    [min, max] must not be able to command over-travel, neither through
@@ -361,10 +387,21 @@ static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) 
         return lastGoodValue[slot];
     }
 
+    /* Passthrough means whatever comes in goes out (owner's rule,
+       2026-10-14): no min/center/max, no reverse -- endpoints, subtrim,
+       reverse and expo for throttle/rudder/pipe channels all live in the
+       transmitter, where the pilot wants symmetric authority. Only the
+       failsafe policy above and the absolute electrical guard apply. */
+    if (cfg->source == OUTPUT_SOURCE_PASSTHROUGH) {
+        uint16_t const pulse = passthrough_us(rawValue);
+        lastGoodValue[slot] = pulse;
+        return pulse;
+    }
+
     uint16_t srcMin = RX_CHANNEL_RAW_MIN;
     uint16_t srcCenter = RX_CHANNEL_RAW_CENTER;
     uint16_t srcMax = RX_CHANNEL_RAW_MAX;
-    if (cfg->source != OUTPUT_SOURCE_PASSTHROUGH && cfg->hasSourceRangeOverride) {
+    if (cfg->hasSourceRangeOverride) {
         srcMin = cfg->sourceMin;
         srcCenter = cfg->sourceCenter;
         srcMax = cfg->sourceMax;
@@ -468,7 +505,9 @@ void output_start(void) {
     OutputFrame initial = {0};
     initial.status = RX_STATUS_FAILSAFE;
     for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
-        lastGoodValue[i] = clamp_to_travel(&slotTrim[i], slotTrim[i].center);
+        lastGoodValue[i] = slotConfigs[i].source == OUTPUT_SOURCE_PASSTHROUGH
+                               ? passthrough_us(RX_CHANNEL_RAW_CENTER)
+                               : clamp_to_travel(&slotTrim[i], slotTrim[i].center);
         initial.servos[i] = resolve_slot(i, false, 0);
     }
     xQueueOverwrite(output_queue, &initial);
