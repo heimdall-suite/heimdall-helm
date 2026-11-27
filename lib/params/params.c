@@ -23,9 +23,38 @@
    has no include path to lib/rx/ at all. Values must stay in sync with
    rx.h's own by hand; a board's HELM_RX_DEFAULT_PROTOCOL_* pick already
    works the same duplicated-by-hand way across board_features.h files. */
+/* Issue #69 -- one macro per ParamKind, so every entry states its
+   metadata in the same place as its name/default. Choice values mirror
+   rx.h/servo.h/gps.h by hand, same "no include path from this file"
+   reasoning as the defaults below. */
+#define P_NUM(n, def, lo, hi, u, fl)                                                                 \
+    {.name = (n), .type = PARAM_TYPE_U32, .defaultValue = (def), .min = (lo), .max = (hi),            \
+     .choices = NULL, .kind = PARAM_KIND_NUMBER, .unit = (u), .flags = (fl)}
+#define P_BOOL(n, def, fl)                                                                           \
+    {.name = (n), .type = PARAM_TYPE_U32, .defaultValue = (def), .min = 0U, .max = 1U,                \
+     .choices = NULL, .kind = PARAM_KIND_BOOL, .unit = PARAM_UNIT_NONE, .flags = (fl)}
+#define P_ENUM(n, def, ch, fl)                                                                       \
+    {.name = (n), .type = PARAM_TYPE_U32, .defaultValue = (def), .min = 0U, .max = 0U,                \
+     .choices = (ch), .kind = PARAM_KIND_ENUM, .unit = PARAM_UNIT_NONE, .flags = (fl)}
+#define P_PORT(n, def, fl)                                                                           \
+    {.name = (n), .type = PARAM_TYPE_U32, .defaultValue = (def), .min = 0U, .max = 0U,                \
+     .choices = NULL, .kind = PARAM_KIND_PORT, .unit = PARAM_UNIT_NONE, .flags = (fl)}
+/* out<N>.min/center/max/reversed -- applied live (output.c reloads trim
+   every tick). The order check stays in param_set_output(). */
+#define P_OUT_SLOT(N, center, rev)                                                                   \
+    P_NUM("out" #N ".min", 1000U, PARAM_OUTPUT_PULSE_MIN_US, PARAM_OUTPUT_PULSE_MAX_US, PARAM_UNIT_US, 0U), \
+    P_NUM("out" #N ".center", (center), PARAM_OUTPUT_PULSE_MIN_US, PARAM_OUTPUT_PULSE_MAX_US,         \
+          PARAM_UNIT_US, 0U),                                                                        \
+    P_NUM("out" #N ".max", 2000U, PARAM_OUTPUT_PULSE_MIN_US, PARAM_OUTPUT_PULSE_MAX_US, PARAM_UNIT_US, 0U), \
+    P_BOOL("out" #N ".reversed", (rev), 0U)
+
+#define CHOICES_INPUT_PROTOCOL "0=SBUS,1=CRSF"     /* RX_INPUT_MODE_* (rx.h) */
+#define CHOICES_SOURCE "0=none,1=direct,2=onboard" /* ParamPortSource */
+
 ParamDef const g_paramDefs[PARAM_COUNT] = {
-    {"test_counter", PARAM_TYPE_U32, 0},
-    {"input_mode", PARAM_TYPE_U32, HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U},
+    P_NUM("test_counter", 0U, 0U, UINT32_MAX, PARAM_UNIT_NONE, PARAM_FLAG_HIDDEN),
+    P_ENUM("input_mode", HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U, CHOICES_INPUT_PROTOCOL,
+           PARAM_FLAG_REBOOT | PARAM_FLAG_HIDDEN), /* vestigial since #55, see params.h */
     /* servo_rate's default is 0 (SERVO_RATE_50HZ, lib/servo/servo.h) on
        every board -- unlike input_mode, this isn't a per-board hardware
        fact (no board_features.h flag drives it): 50Hz is simply the safe
@@ -33,7 +62,7 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
        every target rather than duplicated per board_features.h. Raw 0U,
        not servo.h's SERVO_RATE_50HZ, for the same reason input_mode uses
        raw 0U/1U above -- no include path to lib/servo/ from this file. */
-    {"servo_rate", PARAM_TYPE_U32, 0U},
+    P_ENUM("servo_rate", 0U, "0=50 Hz,1=250 Hz,3=333 Hz", PARAM_FLAG_REBOOT),
 
     /* Issue #54 -- gps/mag/input/telemetry's own .port/.protocol/.source
        triples (params.h's own comment on the PARAM_GPS_PORT block has
@@ -72,17 +101,18 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
 #define HELM_GPS_DEFAULT_SOURCE PARAM_PORT_SOURCE_NONE
 #endif
 
-    {"gps.port", PARAM_TYPE_U32, HELM_GPS_DEFAULT_PORT},
-    {"gps.protocol", PARAM_TYPE_U32, 0U}, /* GPS_PROTOCOL_NMEA (gps.h) --
+    P_PORT("gps.port", HELM_GPS_DEFAULT_PORT, PARAM_FLAG_REBOOT),
+    P_ENUM("gps.protocol", 0U, "0=NMEA", PARAM_FLAG_REBOOT), /* GPS_PROTOCOL_NMEA (gps.h) --
                                               raw 0U here, no include path
                                               to lib/sensors/ from this
                                               file (same reasoning
                                               input_mode's own comment
                                               gives for lib/rx/) */
-    {"gps.source", PARAM_TYPE_U32, HELM_GPS_DEFAULT_SOURCE},
-    {"mag.port", PARAM_TYPE_U32, PARAM_PORT_UNSET},
-    {"mag.protocol", PARAM_TYPE_U32, 0U},
-    {"mag.source", PARAM_TYPE_U32, PARAM_PORT_SOURCE_NONE},
+    P_ENUM("gps.source", HELM_GPS_DEFAULT_SOURCE, CHOICES_SOURCE, PARAM_FLAG_REBOOT),
+    /* mag.*: hidden until #57 gives it a driver that reads them */
+    P_PORT("mag.port", PARAM_PORT_UNSET, PARAM_FLAG_REBOOT | PARAM_FLAG_HIDDEN),
+    P_NUM("mag.protocol", 0U, 0U, UINT32_MAX, PARAM_UNIT_NONE, PARAM_FLAG_REBOOT | PARAM_FLAG_HIDDEN),
+    P_ENUM("mag.source", PARAM_PORT_SOURCE_NONE, CHOICES_SOURCE, PARAM_FLAG_REBOOT | PARAM_FLAG_HIDDEN),
 
     /* Issue #55 -- input/telemetry are the first real consumers of #54's
        shape, so unlike gps/mag above, these need real per-board defaults,
@@ -140,16 +170,16 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
 #define HELM_TELEMETRY_DEFAULT_SOURCE PARAM_PORT_SOURCE_NONE
 #endif
 
-    {"input.port", PARAM_TYPE_U32, HELM_INPUT_DEFAULT_PORT},
-    {"input.protocol", PARAM_TYPE_U32, HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U}, /* same
+    P_PORT("input.port", HELM_INPUT_DEFAULT_PORT, PARAM_FLAG_REBOOT),
+    P_ENUM("input.protocol", HELM_RX_DEFAULT_PROTOCOL_CRSF ? 1U : 0U, CHOICES_INPUT_PROTOCOL, PARAM_FLAG_REBOOT), /* same
                                                         raw-0U/1U-not-rx.h's-enum reasoning
                                                         as input_mode's default above --
                                                         this is input_mode's real successor
                                                         as of #55 (see rx.c) */
-    {"input.source", PARAM_TYPE_U32, HELM_INPUT_DEFAULT_SOURCE},
-    {"telemetry.port", PARAM_TYPE_U32, HELM_TELEMETRY_DEFAULT_PORT},
-    {"telemetry.protocol", PARAM_TYPE_U32, HELM_TELEMETRY_DEFAULT_PROTOCOL},
-    {"telemetry.source", PARAM_TYPE_U32, HELM_TELEMETRY_DEFAULT_SOURCE},
+    P_ENUM("input.source", HELM_INPUT_DEFAULT_SOURCE, CHOICES_SOURCE, PARAM_FLAG_REBOOT),
+    P_PORT("telemetry.port", HELM_TELEMETRY_DEFAULT_PORT, PARAM_FLAG_REBOOT),
+    P_ENUM("telemetry.protocol", HELM_TELEMETRY_DEFAULT_PROTOCOL, "0=S.Port", PARAM_FLAG_REBOOT),
+    P_ENUM("telemetry.source", HELM_TELEMETRY_DEFAULT_SOURCE, CHOICES_SOURCE, PARAM_FLAG_REBOOT),
 
     /* Issue #39 -- output.c's per-slot endpoint/subtrim/reverse
        trim, HELM_PARAMS_MAX_OUTPUT_SLOTS (params.h) slots' worth
@@ -169,44 +199,20 @@ ParamDef const g_paramDefs[PARAM_COUNT] = {
        Names are out<N>.min/center/max/reversed, N = output.c's own
        slotConfigs[] array index (0-based, NOT the physical silkscreen
        label -- see param_output_slot_id()'s own comment in params.h). */
-    {"out0.min", PARAM_TYPE_U32, 1000U},
-    {"out0.center", PARAM_TYPE_U32, 1550U},
-    {"out0.max", PARAM_TYPE_U32, 2000U},
-    {"out0.reversed", PARAM_TYPE_U32, 1U},
-    {"out1.min", PARAM_TYPE_U32, 1000U},
-    {"out1.center", PARAM_TYPE_U32, 1500U},
-    {"out1.max", PARAM_TYPE_U32, 2000U},
-    {"out1.reversed", PARAM_TYPE_U32, 0U},
-    {"out2.min", PARAM_TYPE_U32, 1000U},
-    {"out2.center", PARAM_TYPE_U32, 1500U},
-    {"out2.max", PARAM_TYPE_U32, 2000U},
-    {"out2.reversed", PARAM_TYPE_U32, 0U},
-    {"out3.min", PARAM_TYPE_U32, 1000U},
-    {"out3.center", PARAM_TYPE_U32, 1500U},
-    {"out3.max", PARAM_TYPE_U32, 2000U},
-    {"out3.reversed", PARAM_TYPE_U32, 0U},
-    {"out4.min", PARAM_TYPE_U32, 1000U},
-    {"out4.center", PARAM_TYPE_U32, 1500U},
-    {"out4.max", PARAM_TYPE_U32, 2000U},
-    {"out4.reversed", PARAM_TYPE_U32, 0U},
-    {"out5.min", PARAM_TYPE_U32, 1000U},
-    {"out5.center", PARAM_TYPE_U32, 1500U},
-    {"out5.max", PARAM_TYPE_U32, 2000U},
-    {"out5.reversed", PARAM_TYPE_U32, 0U},
+    P_OUT_SLOT(0, 1550U, 1U),
+    P_OUT_SLOT(1, 1500U, 0U),
+    P_OUT_SLOT(2, 1500U, 0U),
+    P_OUT_SLOT(3, 1500U, 0U),
+    P_OUT_SLOT(4, 1500U, 0U),
+    P_OUT_SLOT(5, 1500U, 0U),
     /* out6/out7: only meaningful on matek_h743 (HELM_SERVO_COUNT 8) --
        afroflight32 (HELM_SERVO_COUNT 6) never reads these, see
        HELM_PARAMS_MAX_OUTPUT_SLOTS's own comment in params.h. Still need
        real default values, even if unread there -- 0 would be a nonsense
        PWM pulse width, so these carry the same plain-slot default as
        every other non-S3/OUT1 slot, not a bare 0. */
-    {"out6.min", PARAM_TYPE_U32, 1000U},
-    {"out6.center", PARAM_TYPE_U32, 1500U},
-    {"out6.max", PARAM_TYPE_U32, 2000U},
-    {"out6.reversed", PARAM_TYPE_U32, 0U},
-    {"out7.min", PARAM_TYPE_U32, 1000U},
-    {"out7.center", PARAM_TYPE_U32, 1500U},
-    {"out7.max", PARAM_TYPE_U32, 2000U},
-    {"out7.reversed", PARAM_TYPE_U32, 0U},
+    P_OUT_SLOT(6, 1500U, 0U),
+    P_OUT_SLOT(7, 1500U, 0U),
 };
 
 /* magic+version+CRC-validated record, same convention as
@@ -366,6 +372,47 @@ bool param_set_u32(ParamId id, uint32_t value) {
     return true;
 }
 
+/* Walks a "0=SBUS,1=CRSF" choices string for `value` -- only the
+   numbers before each '=' matter here, labels are for clients. */
+static bool choice_listed(char const *choices, uint32_t value) {
+    char const *p = choices;
+    while (p != NULL && *p != '\0') {
+        uint32_t v = 0U;
+        bool digits = false;
+        while (*p >= '0' && *p <= '9') {
+            v = (v * 10U) + (uint32_t)(*p - '0');
+            digits = true;
+            p++;
+        }
+        if (digits && v == value) {
+            return true;
+        }
+        p = strchr(p, ',');
+        if (p != NULL) {
+            p++;
+        }
+    }
+    return false;
+}
+
+ParamCheckResult param_value_allowed(ParamId id, uint32_t value) {
+    if (id >= PARAM_COUNT) {
+        return PARAM_CHECK_RANGE;
+    }
+    ParamDef const *def = &g_paramDefs[id];
+    switch ((ParamKind)def->kind) {
+    case PARAM_KIND_NUMBER:
+        return (value < def->min || value > def->max) ? PARAM_CHECK_RANGE : PARAM_CHECK_OK;
+    case PARAM_KIND_BOOL:
+        return value > 1U ? PARAM_CHECK_BOOL : PARAM_CHECK_OK;
+    case PARAM_KIND_ENUM:
+        return choice_listed(def->choices, value) ? PARAM_CHECK_OK : PARAM_CHECK_CHOICE;
+    case PARAM_KIND_PORT:
+        return PARAM_CHECK_OK;
+    }
+    return PARAM_CHECK_RANGE;
+}
+
 int16_t param_find_by_name(char const *name) {
     for (uint16_t i = 0; i < PARAM_COUNT; i++) {
         if (strcmp(g_paramDefs[i].name, name) == 0) {
@@ -391,8 +438,8 @@ bool param_id_is_port_field(ParamId id) {
    "this board doesn't have this port letter/transport". 9 letters
    (A-I) -- the largest port-letter span any of the three current
    boards uses (matek_h743's I) -- bump if a future board ever needs
-   more. */
-#define HELM_PORT_LETTER_COUNT 9U
+   more. HELM_PORT_LETTER_COUNT itself lives in params.h (#69: the CLI
+   walks it to report this board's ports). */
 
 #if defined(HELM_HAS_PORT_A_UART) && HELM_HAS_PORT_A_UART
 #define HELM_PORT_A_UART_BIT 1U

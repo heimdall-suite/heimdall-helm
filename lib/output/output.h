@@ -1,6 +1,7 @@
 #ifndef HELM_OUTPUT_H
 #define HELM_OUTPUT_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "board_features.h"
 #include "rx.h"
@@ -41,5 +42,18 @@ typedef struct {
 
 void output_start(void);
 void output_get_latest(OutputFrame *out);
+
+/* Issue #69 -- read-only description of one physical slot, for clients
+   that need to label out<N>.* params (`cfg info`). slotConfigs[] itself
+   stays private. */
+typedef struct {
+    const char *label;    /* silkscreen label, e.g. "S3" / "OUT1" */
+    bool isPassthrough;   /* true: raw RX channel, trim/reverse don't apply */
+    uint8_t channelIndex; /* 0-based RX channel, passthrough only */
+    const char *function; /* e.g. "pitch" when !isPassthrough, else NULL */
+} OutputSlotInfo;
+
+/* False if slot >= HELM_SERVO_COUNT. Safe before output_start(). */
+bool output_slot_info(uint8_t slot, OutputSlotInfo *out);
 
 #endif /* HELM_OUTPUT_H */

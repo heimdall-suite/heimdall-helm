@@ -19,6 +19,7 @@
 #include "bootloader.h"
 #endif
 #if HELM_FEATURE_PARAMS_PERSIST
+#include "output.h"
 #include "params.h"
 #endif
 
@@ -135,6 +136,82 @@ static bool param_parse_port_value(char const *str, uint32_t *outValue) {
     return false;
 }
 
+/* Issue #69 -- the one validated write path, shared by the human `param
+   set` and the machine `cfg set`, so both reject exactly the same values
+   with exactly the same reasons. Returns NULL on success, else a reason
+   without any "REJECTED --" prefix; *writeFailed tells a flash failure
+   (valid value, not saved) apart from a rejected value. `reason` is
+   caller-provided scratch for formatted reasons -- on the CLI task's
+   stack, not a static, so afroflight32 pays no RAM for it. */
+static const char *param_apply(ParamId id, char const *valueStr, bool *writeFailed, char *reason,
+                               size_t reasonSize) {
+    *writeFailed = false;
+
+    /* Issue #54 -- `.port` fields go through the validated setter
+       (board-existence + collision checks, params.h's own
+       param_set_port() comment). */
+    if (param_id_is_port_field(id)) {
+        uint32_t portValue = 0;
+        if (!param_parse_port_value(valueStr, &portValue)) {
+            return "expected a port letter (a-i) or \"none\"";
+        }
+        ParamPortTransport const transport = param_port_field_transport(id);
+        if (portValue != PARAM_PORT_UNSET && !param_port_exists((uint8_t)portValue, transport)) {
+            return "no such port on this board";
+        }
+        if (!param_set_port(id, (uint8_t)portValue, transport)) {
+            return "already claimed by another subsystem, or flash write error";
+        }
+        return NULL;
+    }
+
+    /* Strict parse -- strtoul alone silently turned "abc" into 0. */
+    char *end = NULL;
+    uint32_t const value = (uint32_t)strtoul(valueStr, &end, 0);
+    if (end == valueStr || *end != '\0' || valueStr[0] == '-') {
+        return "not a number";
+    }
+
+    ParamDef const *def = &g_paramDefs[id];
+    switch (param_value_allowed(id, value)) {
+    case PARAM_CHECK_OK:
+        break;
+    case PARAM_CHECK_RANGE:
+        snprintf(reason, reasonSize, "must be %lu-%lu%s", (unsigned long)def->min, (unsigned long)def->max,
+                 def->unit == PARAM_UNIT_US ? "us" : "");
+        return reason;
+    case PARAM_CHECK_BOOL:
+        return "must be 0 or 1";
+    case PARAM_CHECK_CHOICE:
+        snprintf(reason, reasonSize, "must be one of %s", def->choices);
+        return reason;
+    }
+
+    /* #65 -- out<N>.* trim also needs the cross-field order check. */
+    if (param_id_is_output_field(id)) {
+        switch (param_set_output(id, value)) {
+        case PARAM_OUTPUT_OK:
+            return NULL;
+        case PARAM_OUTPUT_REJECT_RANGE:
+            return "pulse must be 500-2500us";
+        case PARAM_OUTPUT_REJECT_ORDER:
+            return "would break min <= center <= max for this slot (move the limit on the far side first)";
+        case PARAM_OUTPUT_REJECT_BOOL:
+            return "reversed must be 0 or 1";
+        case PARAM_OUTPUT_REJECT_WRITE:
+            break;
+        }
+        *writeFailed = true;
+        return "flash write error, value NOT saved";
+    }
+
+    if (!param_set_u32(id, value)) {
+        *writeFailed = true;
+        return "flash write error, value NOT saved";
+    }
+    return NULL;
+}
+
 static void cmd_param(const char *args) {
     if (strcmp(args, "list") == 0) {
         for (uint16_t i = 0; i < PARAM_COUNT; i++) {
@@ -171,68 +248,225 @@ static void cmd_param(const char *args) {
             return;
         }
 
-        /* Issue #54 -- `.port` fields go through the validated setter
-           (board-existence + collision checks, params.h's own
-           param_set_port() comment), not the plain param_set_u32() every
-           other param here still uses. */
-        if (param_id_is_port_field((ParamId)id)) {
-            uint32_t portValue = 0;
-            if (!param_parse_port_value(valueStr, &portValue)) {
-                shell_print("invalid port value -- expected a letter (a-i) or \"none\"\r\n");
-                return;
-            }
-
-            ParamPortTransport const transport = param_port_field_transport((ParamId)id);
-            if (portValue != PARAM_PORT_UNSET && !param_port_exists((uint8_t)portValue, transport)) {
-                shell_print("no such port on this board\r\n");
-                return;
-            }
-            if (!param_set_port((ParamId)id, (uint8_t)portValue, transport)) {
-                shell_print("FAILED -- already claimed by another subsystem, or flash write error\r\n");
-                return;
-            }
-            param_print_value((ParamId)id);
-            return;
-        }
-
-        uint32_t const value = (uint32_t)strtoul(valueStr, NULL, 0);
-
-        /* #65 -- out<N>.* trim goes through the validated setter, same
-           reasoning as `.port` above: an out-of-range or out-of-order
-           value must be rejected here, not just clamped later. */
-        if (param_id_is_output_field((ParamId)id)) {
-            switch (param_set_output((ParamId)id, value)) {
-            case PARAM_OUTPUT_OK:
-                param_print_value((ParamId)id);
-                return;
-            case PARAM_OUTPUT_REJECT_RANGE:
-                shell_print("REJECTED -- pulse must be 500-2500us\r\n");
-                return;
-            case PARAM_OUTPUT_REJECT_ORDER:
-                shell_print("REJECTED -- would break min <= center <= max for this slot "
-                            "(move the limit on the far side first)\r\n");
-                return;
-            case PARAM_OUTPUT_REJECT_BOOL:
-                shell_print("REJECTED -- reversed must be 0 or 1\r\n");
-                return;
-            case PARAM_OUTPUT_REJECT_WRITE:
-                shell_print("FAILED to persist -- flash write error, value NOT saved\r\n");
-                return;
-            }
-            return;
-        }
-
-        if (!param_set_u32((ParamId)id, value)) {
-            shell_print("FAILED to persist -- flash write error, value NOT saved\r\n");
+        bool writeFailed = false;
+        char reason[80];
+        char const *err = param_apply((ParamId)id, valueStr, &writeFailed, reason, sizeof(reason));
+        if (err != NULL) {
+            shell_print(writeFailed ? "FAILED -- " : "REJECTED -- ");
+            shell_print(err);
+            shell_print("\r\n");
             return;
         }
         param_print_value((ParamId)id);
+        if (g_paramDefs[id].flags & PARAM_FLAG_REBOOT) {
+            shell_print("(takes effect after reboot)\r\n");
+        }
         return;
     }
 
     shell_print("usage: param list | param show <name> | param set <name> <value>\r\n");
 }
+
+/* ---- `cfg`: machine-readable interface for clients (issue #69) ----
+   One JSON object per line, every line has a "t" (type) field. Stable
+   interface, documented in .docs/cli.md -- bump CFG_PROTO_VERSION on any
+   change a client would have to know about. Clients ignore any line that
+   doesn't start with '{' (the shell echoes typed input). Strings printed
+   here are all compile-time names/labels without characters needing
+   JSON escaping. */
+#define CFG_PROTO_VERSION 1
+
+static void json_kv_str(char const *key, char const *value) {
+    shell_print(",\"");
+    shell_print(key);
+    shell_print("\":\"");
+    shell_print(value);
+    shell_print("\"");
+}
+
+static void json_kv_u32(char const *key, uint32_t value) {
+    char num[16];
+    snprintf(num, sizeof(num), "%lu", (unsigned long)value);
+    shell_print(",\"");
+    shell_print(key);
+    shell_print("\":");
+    shell_print(num);
+}
+
+/* A param's value as JSON: a string ("c"/"none") for ports, a number
+   for everything else -- same letters the human CLI uses. */
+static void json_kv_param_value(char const *key, ParamId id, uint32_t value) {
+    if (g_paramDefs[id].kind == PARAM_KIND_PORT) {
+        char letter[2] = {0, 0};
+        if (value != PARAM_PORT_UNSET) {
+            letter[0] = (char)('a' + value);
+        }
+        json_kv_str(key, value == PARAM_PORT_UNSET ? "none" : letter);
+        return;
+    }
+    json_kv_u32(key, value);
+}
+
+/* "0=SBUS,1=CRSF" -> ,"choices":[[0,"SBUS"],[1,"CRSF"]] */
+static void json_kv_choices(char const *choices) {
+    shell_print(",\"choices\":[");
+    char const *p = choices;
+    bool first = true;
+    while (*p != '\0') {
+        char const *eq = strchr(p, '=');
+        if (eq == NULL) {
+            break;
+        }
+        char const *comma = strchr(eq, ',');
+        size_t const labelLen = comma != NULL ? (size_t)(comma - eq - 1) : strlen(eq + 1);
+        char item[40];
+        snprintf(item, sizeof(item), "%s[%.*s,\"%.*s\"]", first ? "" : ",", (int)(eq - p), p, (int)labelLen,
+                 eq + 1);
+        shell_print(item);
+        first = false;
+        if (comma == NULL) {
+            break;
+        }
+        p = comma + 1;
+    }
+    shell_print("]");
+}
+
+static char const *const kKindNames[] = {"number", "bool", "enum", "port"};
+
+static void cfg_print_param(ParamId id) {
+    ParamDef const *def = &g_paramDefs[id];
+    uint32_t value = 0;
+    param_get_u32(id, &value);
+
+    shell_print("{\"t\":\"param\"");
+    json_kv_str("name", def->name);
+    json_kv_str("kind", kKindNames[def->kind]);
+    json_kv_param_value("value", id, value);
+    json_kv_param_value("default", id, def->defaultValue);
+    if (def->kind == PARAM_KIND_NUMBER) {
+        json_kv_u32("min", def->min);
+        json_kv_u32("max", def->max);
+    } else if (def->kind == PARAM_KIND_ENUM) {
+        json_kv_choices(def->choices);
+    } else if (def->kind == PARAM_KIND_PORT) {
+        json_kv_str("transport", param_port_field_transport(id) == PARAM_PORT_TRANSPORT_I2C ? "i2c" : "uart");
+    }
+    if (def->unit == PARAM_UNIT_US) {
+        json_kv_str("unit", "us");
+    }
+    json_kv_str("apply", (def->flags & PARAM_FLAG_REBOOT) ? "reboot" : "live");
+    if (def->flags & PARAM_FLAG_HIDDEN) {
+        shell_print(",\"hidden\":true");
+    }
+    shell_print("}\r\n");
+}
+
+static void cfg_print_ports(char const *key, ParamPortTransport transport) {
+    char letters[HELM_PORT_LETTER_COUNT + 1];
+    size_t n = 0;
+    for (uint8_t i = 0; i < HELM_PORT_LETTER_COUNT; i++) {
+        if (param_port_exists(i, transport)) {
+            letters[n++] = (char)('a' + i);
+        }
+    }
+    letters[n] = '\0';
+    json_kv_str(key, letters);
+}
+
+static void cfg_info(void) {
+    shell_print("{\"t\":\"info\"");
+    json_kv_u32("proto", CFG_PROTO_VERSION);
+    json_kv_str("board", HELM_BOARD_NAME);
+    json_kv_str("fw", HELM_FW_REV);
+    json_kv_u32("servos", HELM_SERVO_COUNT);
+    cfg_print_ports("uart", PARAM_PORT_TRANSPORT_UART);
+    cfg_print_ports("i2c", PARAM_PORT_TRANSPORT_I2C);
+    shell_print(",\"slots\":[");
+    for (uint8_t i = 0; i < HELM_SERVO_COUNT; i++) {
+        OutputSlotInfo info;
+        if (!output_slot_info(i, &info)) {
+            break;
+        }
+        char item[48];
+        if (info.isPassthrough) {
+            snprintf(item, sizeof(item), "%s{\"i\":%u,\"label\":\"%s\",\"src\":\"ch%u\"}", i == 0 ? "" : ",",
+                     (unsigned)i, info.label, (unsigned)(info.channelIndex + 1U));
+        } else {
+            snprintf(item, sizeof(item), "%s{\"i\":%u,\"label\":\"%s\",\"src\":\"%s\"}", i == 0 ? "" : ",",
+                     (unsigned)i, info.label, info.function);
+        }
+        shell_print(item);
+    }
+    shell_print("]}\r\n");
+}
+
+static void cfg_error(char const *msg) {
+    shell_print("{\"t\":\"error\"");
+    json_kv_str("error", msg);
+    shell_print("}\r\n");
+}
+
+static void cmd_cfg(const char *args) {
+    if (strcmp(args, "info") == 0) {
+        cfg_info();
+        return;
+    }
+    if (strcmp(args, "params") == 0) {
+        for (uint16_t i = 0; i < PARAM_COUNT; i++) {
+            cfg_print_param((ParamId)i);
+        }
+        shell_print("{\"t\":\"end\"");
+        json_kv_u32("n", PARAM_COUNT);
+        shell_print("}\r\n");
+        return;
+    }
+
+    char buf[SHELL_MAX_LINE_LEN];
+    strncpy(buf, args, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    char *verb = strtok(buf, " ");
+    char *name = strtok(NULL, " ");
+    char *valueStr = strtok(NULL, " ");
+
+    if (verb != NULL && strcmp(verb, "set") == 0 && name != NULL && valueStr != NULL) {
+        int16_t const id = param_find_by_name(name);
+        shell_print("{\"t\":\"set\"");
+        json_kv_str("name", name);
+        if (id < 0) {
+            shell_print(",\"ok\":false");
+            json_kv_str("error", "no such param");
+            shell_print("}\r\n");
+            return;
+        }
+        bool writeFailed = false;
+        char reason[80];
+        char const *err = param_apply((ParamId)id, valueStr, &writeFailed, reason, sizeof(reason));
+        uint32_t value = 0;
+        param_get_u32((ParamId)id, &value);
+        shell_print(err == NULL ? ",\"ok\":true" : ",\"ok\":false");
+        if (err != NULL) {
+            json_kv_str("error", err);
+        }
+        /* Always report the value now stored -- unchanged on failure. */
+        json_kv_param_value("value", (ParamId)id, value);
+        shell_print("}\r\n");
+        return;
+    }
+
+    cfg_error("usage: cfg info | cfg params | cfg set <name> <value>");
+}
 #endif
+
+/* `reboot` command handler (#69): plain system reset. Every param write
+   is already persisted synchronously by the time `param set`/`cfg set`
+   replies, so there's nothing to flush except this reply itself. */
+static void cmd_reboot(const char *args) {
+    (void)args;
+    shell_print("rebooting...\r\n");
+    vTaskDelay(pdMS_TO_TICKS(100));
+    NVIC_SystemReset();
+}
 
 /* `diag` command handler: forwards to lib/diag's own dispatch --
    `pipeline`/`wedge` and any future bench-only diagnostic live there,
@@ -275,7 +509,13 @@ static void cli_task(void *arg) {
     if (!shell_register("param", "persisted params -- param list | show <name> | set <name> <value>", cmd_param)) {
         shell_print("WARNING: command table full, \"param\" NOT registered\r\n");
     }
+    if (!shell_register("cfg", "machine-readable (JSON lines) for the configurator -- see .docs/cli.md", cmd_cfg)) {
+        shell_print("WARNING: command table full, \"cfg\" NOT registered\r\n");
+    }
 #endif
+    if (!shell_register("reboot", "reset the board (applies reboot-only params)", cmd_reboot)) {
+        shell_print("WARNING: command table full, \"reboot\" NOT registered\r\n");
+    }
 
     shell_task(NULL);
 }

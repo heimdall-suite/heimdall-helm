@@ -178,15 +178,60 @@ typedef enum {
     PARAM_TYPE_U32,
 } ParamType;
 
+/* Issue #69 -- per-param metadata, so a client (the web configurator,
+   `cfg params`) can render and pre-check a param without hardcoding
+   anything about it. All of it lives in g_paramDefs, which is const
+   (flash, not RAM). The firmware is still the one that decides:
+   param_value_allowed() enforces min/max/choices on every write path. */
+typedef enum {
+    PARAM_KIND_NUMBER = 0, /* plain u32, limited to [min, max] */
+    PARAM_KIND_BOOL,       /* 0/1 */
+    PARAM_KIND_ENUM,       /* one of `choices` */
+    PARAM_KIND_PORT,       /* a port letter or none -- validated by
+                              param_set_port(), not min/max */
+} ParamKind;
+
+typedef enum {
+    PARAM_UNIT_NONE = 0,
+    PARAM_UNIT_US,
+} ParamUnit;
+
+/* Only read once at its consumer's container-start (rx/servo/gps), so a
+   change needs a reboot to take effect. Clear = applied live. */
+#define PARAM_FLAG_REBOOT 0x01U
+/* Legacy, test-only, or not read by anything yet -- still settable over
+   the CLI, but a client should not show it by default. */
+#define PARAM_FLAG_HIDDEN 0x02U
+
 typedef struct {
     const char *name;
     ParamType type;
     uint32_t defaultValue;
+    uint32_t min;        /* PARAM_KIND_NUMBER only */
+    uint32_t max;        /* PARAM_KIND_NUMBER only */
+    const char *choices; /* PARAM_KIND_ENUM only: "0=SBUS,1=CRSF" -- value=label
+                            pairs, comma-separated, labels free of ',' '=' '"' */
+    uint8_t kind;        /* ParamKind */
+    uint8_t unit;        /* ParamUnit */
+    uint8_t flags;       /* PARAM_FLAG_* */
 } ParamDef;
 
 /* One entry per ParamId, defined in params.c -- the CLI's `param list`
    walks this directly. */
 extern ParamDef const g_paramDefs[PARAM_COUNT];
+
+typedef enum {
+    PARAM_CHECK_OK,
+    PARAM_CHECK_RANGE,  /* NUMBER outside [min, max] */
+    PARAM_CHECK_BOOL,   /* BOOL not 0/1 */
+    PARAM_CHECK_CHOICE, /* ENUM not one of `choices` */
+} ParamCheckResult;
+
+/* Metadata-only check of `value` against g_paramDefs[id] (#69). Always
+   PARAM_CHECK_OK for PARAM_KIND_PORT -- param_set_port() owns that.
+   Doesn't replace param_set_output()'s cross-field order check, which
+   needs the slot's other values. */
+ParamCheckResult param_value_allowed(ParamId id, uint32_t value);
 
 /* Loads every param from flash into the in-RAM cache get/set below read
    and write -- call once, before any param_get_u32()/param_set_u32()/CLI
@@ -256,6 +301,10 @@ bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transp
    own min/max is what keeps a linkage off its mechanical stops. */
 #define PARAM_OUTPUT_PULSE_MIN_US 500U
 #define PARAM_OUTPUT_PULSE_MAX_US 2500U
+
+/* Highest port index + 1 that param_port_exists() can ever answer true
+   for (letters A-I) -- see params.c's own comment on this. */
+#define HELM_PORT_LETTER_COUNT 9U
 
 typedef enum {
     PARAM_OUTPUT_OK,
