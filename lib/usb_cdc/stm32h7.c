@@ -148,4 +148,16 @@ void usb_cdc_write(const uint8_t *buf, uint32_t len) {
         USBD_CDC_TransmitPacket(&hUsbDeviceFS);
         sent += chunk;
     }
+
+    /* #69 -- also wait for the LAST chunk before returning. The USB core
+       reads straight from the caller's buffer, so returning while it's
+       still in flight let the caller overwrite it (a reused snprintf line
+       buffer, a stack byte for the shell's echo) before it went out --
+       harmless for short human output, garbles `cfg params`' long JSON
+       stream. Same bounded spin as above, so a host that stopped reading
+       still can't hang the CLI task. */
+    uint32_t guard = 1000000U;
+    while (cdc->TxState != 0U && guard > 0U) {
+        guard--;
+    }
 }

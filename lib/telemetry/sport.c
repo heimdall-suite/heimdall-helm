@@ -368,7 +368,7 @@ static void sport_apply_push(uint16_t valueId, uint32_t data) {
     /* #65 -- same validated setter the CLI uses. No reply channel exists
        yet to tell the radio why (see above), so a rejection is only
        visible via `diag sport`'s push_rejected counter. */
-    if (param_set_output((ParamId)valueId, data) == PARAM_OUTPUT_OK) {
+    if (param_set_output((ParamId)valueId, data) == PARAM_OK) {
         sportPushAppliedCount++;
     } else {
         sportPushRejectedCount++;

@@ -178,15 +178,99 @@ typedef enum {
     PARAM_TYPE_U32,
 } ParamType;
 
+/* Issue #69 -- per-param metadata, so a client (the web configurator,
+   `cfg params`) can render and pre-check a param without hardcoding
+   anything about it. All of it lives in g_paramDefs, which is const
+   (flash, not RAM). The firmware is still the one that decides:
+   param_value_allowed() enforces min/max/choices on every write path. */
+typedef enum {
+    PARAM_KIND_NUMBER = 0, /* plain u32, limited to [min, max] */
+    PARAM_KIND_BOOL,       /* 0/1 */
+    PARAM_KIND_ENUM,       /* one of `choices` */
+    PARAM_KIND_PORT,       /* a port letter or none -- validated by
+                              param_set_port(), not min/max */
+} ParamKind;
+
+typedef enum {
+    PARAM_UNIT_NONE = 0,
+    PARAM_UNIT_US,
+} ParamUnit;
+
+/* Only read once at its consumer's container-start (rx/servo/gps), so a
+   change needs a reboot to take effect. Clear = applied live. */
+#define PARAM_FLAG_REBOOT 0x01U
+/* Legacy, test-only, or not read by anything yet -- still settable over
+   the CLI, but a client should not show it by default. */
+#define PARAM_FLAG_HIDDEN 0x02U
+
 typedef struct {
     const char *name;
     ParamType type;
     uint32_t defaultValue;
+    uint32_t min;        /* PARAM_KIND_NUMBER only */
+    uint32_t max;        /* PARAM_KIND_NUMBER only */
+    const char *choices; /* PARAM_KIND_ENUM only: "0=SBUS,1=CRSF" -- value=label
+                            pairs, comma-separated, labels free of ',' '=' '"' */
+    uint8_t kind;        /* ParamKind */
+    uint8_t unit;        /* ParamUnit */
+    uint8_t flags;       /* PARAM_FLAG_* */
 } ParamDef;
 
 /* One entry per ParamId, defined in params.c -- the CLI's `param list`
    walks this directly. */
 extern ParamDef const g_paramDefs[PARAM_COUNT];
+
+/* Issue #69 -- the ONE result type every param write/check returns, so
+   every transport (CLI, `cfg`, S.Port push #42, future CRSF param CRUD)
+   reports the same outcome the same way. Two levels, like an HTTP status
+   + a problem code:
+   - param_result_status(): the class a client can handle generically
+     (ok / rejected / not_found / failed)
+   - param_result_code(): the specific reason, a short stable string for
+     text transports ("range") -- also the client's i18n key
+   Numbering is append-only, same rule as ParamId: a binary transport
+   sends the number itself, so never renumber or reuse a value. */
+typedef enum {
+    PARAM_OK = 0,
+    PARAM_ERR_RANGE = 1,         /* NUMBER outside [min, max] */
+    PARAM_ERR_ORDER = 2,         /* out<N>.*: would break min <= center <= max */
+    PARAM_ERR_BOOL = 3,          /* BOOL not 0/1 */
+    PARAM_ERR_CHOICE = 4,        /* ENUM not one of `choices` */
+    PARAM_ERR_FORMAT = 5,        /* unparseable value text (transport-side parse) */
+    PARAM_ERR_PORT_MISSING = 6,  /* no such port letter/transport on this board */
+    PARAM_ERR_PORT_CLAIMED = 7,  /* port already claimed by another subsystem */
+    PARAM_ERR_UNKNOWN_PARAM = 8, /* no param by that name/id */
+    PARAM_ERR_FLASH_WRITE = 9,   /* value was valid, but persisting it failed */
+    PARAM_RESULT_COUNT
+} ParamResult;
+
+typedef enum {
+    PARAM_STATUS_OK = 0,
+    PARAM_STATUS_REJECTED,  /* the request was understood, the value isn't allowed */
+    PARAM_STATUS_NOT_FOUND, /* no such param (client/firmware version mismatch?) */
+    PARAM_STATUS_FAILED,    /* the board couldn't do it -- nothing saved */
+} ParamStatus;
+
+ParamStatus param_result_status(ParamResult result);
+/* "ok", "range", "order", ... -- stable, part of the `cfg` interface. */
+char const *param_result_code(ParamResult result);
+/* "ok" / "rejected" / "not_found" / "failed" */
+char const *param_status_name(ParamStatus status);
+/* Short English explanation for the human CLI only -- `cfg` sends the
+   code instead and lets the client localize it. */
+char const *param_result_text(ParamResult result);
+
+/* Metadata-only check of `value` against g_paramDefs[id] (#69): RANGE,
+   BOOL or CHOICE. Always PARAM_OK for PARAM_KIND_PORT --
+   param_set_port() owns that. Doesn't include param_set_output()'s
+   cross-field order check, which needs the slot's other values. */
+ParamResult param_value_allowed(ParamId id, uint32_t value);
+
+/* The validated write for every non-port param: metadata check, then
+   (for out<N>.*) param_set_output()'s order check, then persist. Nothing
+   is written unless the result is PARAM_OK. Port fields return
+   PARAM_ERR_FORMAT here -- they need a transport, use param_set_port(). */
+ParamResult param_set_checked(ParamId id, uint32_t value);
 
 /* Loads every param from flash into the in-RAM cache get/set below read
    and write -- call once, before any param_get_u32()/param_set_u32()/CLI
@@ -237,14 +321,12 @@ bool param_port_exists(uint8_t portIndex, ParamPortTransport transport);
    this port exist on this board at all for `transport`
    (param_port_exists() above) and (2) is it already claimed -- currently
    `.source == PARAM_PORT_SOURCE_DIRECT` -- by a DIFFERENT subsystem.
-   Rejects (returns false, nothing written/persisted) if either check
-   fails, same all-or-nothing contract as param_set_u32(); also returns
-   false if the underlying param_set_u32() call itself fails (flash write
-   error). One of two validated setters in this store (the other is
-   param_set_output() below, #65) -- every other param (including this
-   same subsystem's own `.protocol`/`.source`) still goes through plain
-   param_set_u32(), unvalidated. */
-bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport);
+   Returns PARAM_ERR_PORT_MISSING / PARAM_ERR_PORT_CLAIMED (nothing
+   written) if either check fails, PARAM_ERR_FLASH_WRITE if persisting
+   fails -- #69 split those apart; the old bool couldn't tell "claimed"
+   from "flash error". Every other param goes through
+   param_set_checked() above. */
+ParamResult param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport);
 
 /* Absolute pulse limits for every out<N>.min/center/max (#65) -- the
    full electrical range of the servos actually used on this project's
@@ -257,13 +339,10 @@ bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transp
 #define PARAM_OUTPUT_PULSE_MIN_US 500U
 #define PARAM_OUTPUT_PULSE_MAX_US 2500U
 
-typedef enum {
-    PARAM_OUTPUT_OK,
-    PARAM_OUTPUT_REJECT_RANGE,   /* min/center/max outside 500-2500us */
-    PARAM_OUTPUT_REJECT_ORDER,   /* would break min <= center <= max for this slot */
-    PARAM_OUTPUT_REJECT_BOOL,    /* reversed not 0/1 */
-    PARAM_OUTPUT_REJECT_WRITE,   /* valid, but param_set_u32() failed (flash write) */
-} ParamOutputResult;
+/* Highest port index + 1 that param_port_exists() can ever answer true
+   for (letters A-I) -- see params.c's own comment on this. */
+#define HELM_PORT_LETTER_COUNT 9U
+
 
 /* True if `id` is one of the out<N>.min/center/max/reversed params. */
 bool param_id_is_output_field(ParamId id);
@@ -272,11 +351,12 @@ bool param_id_is_output_field(ParamId id);
    then the plain param_set_u32() underneath" shape as param_set_port().
    Checks the absolute pulse limits above, min <= center <= max against
    this slot's OTHER two current values, and reversed in {0, 1}. Nothing
-   is written unless the result is PARAM_OUTPUT_OK. Every transport that
+   is written unless the result is PARAM_OK (RANGE/ORDER/BOOL/FLASH_WRITE
+   otherwise). Every transport that
    can write trim (CLI `param set`, S.Port push #42) goes through this,
    so a bad value is rejected the same way regardless of where it came
    from. Note the order check means moving a whole range past its old
    values takes the right sequence (e.g. raise max before center). */
-ParamOutputResult param_set_output(ParamId id, uint32_t value);
+ParamResult param_set_output(ParamId id, uint32_t value);
 
 #endif /* HELM_PARAMS_H */

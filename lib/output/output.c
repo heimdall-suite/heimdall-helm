@@ -480,3 +480,15 @@ void output_start(void) {
 void output_get_latest(OutputFrame *out) {
     xQueuePeek(output_queue, out, 0);
 }
+
+bool output_slot_info(uint8_t slot, OutputSlotInfo *out) {
+    if (slot >= HELM_SERVO_COUNT) {
+        return false;
+    }
+    OutputSlotConfig const *cfg = &slotConfigs[slot];
+    out->label = cfg->name;
+    out->isPassthrough = cfg->source == OUTPUT_SOURCE_PASSTHROUGH;
+    out->channelIndex = cfg->channelIndex;
+    out->function = out->isPassthrough ? NULL : "pitch";
+    return true;
+}

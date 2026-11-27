@@ -101,6 +101,8 @@ Open either in any serial terminal once connected.
 | `help` | Lists every registered command and its help text (built in, registered by `shell_init()`) |
 | `status` | Prints the board name and uptime |
 | `dfu` | Only on boards with `HELM_HAS_ROM_BOOTLOADER_JUMP` set (`matek_h743`, `afroflight32`) — reboots into the chip's ROM bootloader (USB DFU on matek_h743, plain UART/AN3155 on afroflight32), ready for `pio run -t upload` with no manual BOOT0-strap needed |
+| `reboot` | Plain system reset ([#69](https://github.com/heimdall-suite/heimdall-helm/issues/69)). Applies params marked reboot-only (`servo_rate`, `input.*`, `gps.*`, ...) — `param set` prints `(takes effect after reboot)` for those. The USB port disappears during the reset; reconnect afterwards |
+| `cfg info` / `cfg params` / `cfg set <name> <value>` | Only with `HELM_FEATURE_PARAMS_PERSIST` — the machine-readable interface for the [web configurator](https://github.com/heimdall-suite/heimdall-configurator) (#69). JSON lines, see [Machine interface](#machine-interface-cfg) below |
 | `diag pipeline` | Shows the RX→Mapping→Control→Output→Servo chain's final stage output (status + channel values) |
 | `diag rx` | Dumps the Input stage's own frame -- status, `last_frame_age_ms`, `frame_loss_count`, all 16 raw channels. Tells "receiver sending frames with its own failsafe bit set" (age stays ~0) apart from "no frames at all" (age keeps growing), which `pipeline`/`mapping` can't: both show the same FAILSAFE fallback either way |
 | `diag mapping` | Dumps the mapping stage's own output directly (issue #34) — status, `pitch_mode` (`OFF`/`LIMIT`/`ACTIVE`, from a hardcoded placeholder channel, currently CH9), `pitch_target` (raw, from a placeholder channel, currently CH12). Not visible via `diag pipeline` yet: output.c still just copies `channels[]` through unchanged until #36 lands, so this is the only way to confirm those channels are actually being interpreted |
@@ -112,6 +114,99 @@ Open either in any serial terminal once connected.
 | `diag baro` | Only on boards with `HELM_HAS_BARO` set (`matek_h743`, `afroflight32`) — dumps the baro sample queue's status + pressure/temperature, real chip reads as of #23 |
 | `diag gps` | Only on boards with `HELM_HAS_GPS_UART_TRANSPORT` set (`matek_h743`) — bytes received vs. valid (checksum-passing) NMEA sentences, for telling "module not talking" apart from "talking but no fix" on a bench with no sky view. The fix itself shows up in `diag telemetry`'s `gps_*` fields (`FAILED` until there is one) |
 | `param list` / `param show <name>` / `param set <name> <value>` | Only on boards with `HELM_FEATURE_PARAMS_PERSIST` set (`matek_h743`, `afroflight32` — see `lib/params/`, issue #32) — generic get/set/enumerate over the persisted-param store. `test_counter` (throwaway proof, issue #32), `input_mode` (real: `lib/rx/rx.c`'s runtime SBUS/CRSF pick, `0`/`1`, issue #10), and `servo_rate` (real: `lib/servo/servo.c`'s PWM frame rate, `0`=50Hz/`1`=250Hz/`3`=333Hz (`2` deliberately unassigned), issue #31 — one setting for every output slot, since period is a per-timer property shared across every channel on it; put servos with different rate ceilings on different timer groups if they need to run at different rates) all take effect on next boot only, not live. `input_mode`/`servo_rate` are read once at their module's own container-start; the 32 `out<N>.min`/`.center`/`.max`/`.reversed` params ([![done #39](https://img.shields.io/badge/done-%2339-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/39), `N` = `output.c`'s own `slotConfigs[]` index, not the physical silkscreen label) are the exception: `output.c` reloads them from the param store every 20ms tick, so a `param set` here takes effect immediately, no reboot needed. They're validated before anything is written (#65, `param_set_output()`): `min`/`center`/`max` must be 500–2500 µs (the AGFRC B24CLM's electrical range; standard Futaba fits inside, Futaba SR/UR modes are unsupported) and keep `min ≤ center ≤ max` for that slot, and `reversed` must be 0/1 — otherwise the CLI prints `REJECTED -- <reason>` and nothing changes. Moving a whole range past its old values takes the right order (e.g. raise `max` before `center`). These limits protect the electronics only; set each slot's own `min`/`max` to the linkage's real mechanical travel. `servo_rate` above 50 Hz is for digital servos only — analog servos (e.g. older Futaba) can overheat or misbehave at 250/333 Hz, and the rate is shared by every slot on a timer. On `matek_h743`, the same 32 params can also be set live over S.Port by a radio's Lua script ([![pending verify #42](https://img.shields.io/badge/pending_verify-%2342-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/42) `sportTelemetryPush()`) — `param set` remains the confirmed fallback if that doesn't land in time. Remaining consumers (function mapping, PID gains) are future work on top of this same interface |
+
+## Machine interface (`cfg`)
+
+A stable, machine-readable interface for clients (the web configurator),
+added by [#69](https://github.com/heimdall-suite/heimdall-helm/issues/69).
+The human `param` output above can change freely; this can't without
+bumping `proto`.
+
+- One JSON object per line, CRLF-terminated, and every object has a `"t"` (type) field.
+- The shell echoes typed input, so **ignore every line that doesn't start with `{`**.
+- Send commands terminated with a single `
+`.
+- **Validation lives in the firmware.** A client may pre-check using the
+  metadata, but the board's own `status`/`code` is final. `param set`,
+  `cfg set` and the S.Port trim push all end up in the same validated
+  setters in `lib/params`, which return one shared `ParamResult`, so they
+  accept and reject exactly the same values.
+
+**`cfg info`** → one line:
+
+```json
+{"t":"info","proto":1,"board":"matek_h743","fw":"3a61cd7","servos":8,"uart":"abcdefg","i2c":"hi",
+ "slots":[{"i":0,"label":"S3","src":"ch1"},{"i":1,"label":"S4","src":"pitch"}, ...]}
+```
+
+| Field | Meaning |
+|---|---|
+| `proto` | Version of this interface; bumped on any change a client would have to know about |
+| `fw` | `git describe --always --dirty` at build time (`scripts/add_version.py`) |
+| `servos` | `HELM_SERVO_COUNT`. Only `out0`..`out<servos-1>` exist physically; the param table always has 8 |
+| `uart` / `i2c` | Port letters this board has for each transport (valid `.port` values) |
+| `slots` | Per output slot: silkscreen `label` and `src` — `chN` (1-based passthrough channel) or a function name (`pitch`). Trim/reverse only affect function-fed slots |
+
+**`cfg params`** → one `param` line per param, then `{"t":"end","n":47}`:
+
+```json
+{"t":"param","name":"out1.center","kind":"number","value":1500,"default":1500,"min":500,"max":2500,"unit":"us","apply":"live"}
+{"t":"param","name":"servo_rate","kind":"enum","value":0,"default":0,"choices":[[0,"50 Hz"],[1,"250 Hz"],[3,"333 Hz"]],"apply":"reboot"}
+{"t":"param","name":"gps.port","kind":"port","value":"c","default":"c","transport":"uart","apply":"reboot"}
+```
+
+| Field | Meaning |
+|---|---|
+| `kind` | `number` (has `min`/`max`), `bool` (0/1), `enum` (has `choices`: `[value, label]` pairs), `port` (value is a letter or `"none"`; has `transport`, matching `info`'s `uart`/`i2c`) |
+| `unit` | Present only when there is one (`us`) |
+| `apply` | `live` (takes effect immediately) or `reboot` (send `reboot`) |
+| `hidden` | `true` for legacy/test/not-yet-consumed params (`test_counter`, `input_mode`, `mag.*`) — don't show by default |
+
+**`cfg set <name> <value>`** → one line. `value` is always what is stored *now* (unchanged on failure):
+
+```json
+{"t":"set","name":"out1.center","status":"ok","value":1520}
+{"t":"set","name":"out1.center","status":"rejected","code":"range","min":500,"max":2500,"value":1520}
+{"t":"set","name":"servo_rate","status":"rejected","code":"choice","value":0}
+{"t":"set","name":"nosuch","status":"not_found","code":"unknown_param"}
+```
+
+Anything else → `{"t":"error","status":"not_found","code":"unknown_command"}`.
+
+### Status and codes
+
+Every action reply has two levels, like an HTTP status plus a problem
+code. `status` is the class a client handles generically. `code` (present
+whenever `status` isn't `ok`) is the exact reason, and doubles as the
+client's i18n key. There's no English text on this interface: the client
+localizes the code. The human `param set` prints the same result as text.
+
+| `status` | Meaning | Client should |
+|---|---|---|
+| `ok` | Done | Show success |
+| `rejected` | Understood, but the value isn't allowed — nothing written | Show the reason at the field |
+| `not_found` | No such param/command | Suspect a client/firmware version mismatch |
+| `failed` | Valid, but the board couldn't persist it — nothing saved | Show a board-level error |
+
+| `code` | # | `status` | Extra fields |
+|---|---|---|---|
+| `range` | 1 | rejected | `min`, `max` |
+| `order` | 2 | rejected | — (`out<N>.*`: would break min ≤ center ≤ max) |
+| `bool` | 3 | rejected | — |
+| `choice` | 4 | rejected | — (choices are in `cfg params`) |
+| `format` | 5 | rejected | — (unparseable number / port letter) |
+| `port_missing` | 6 | rejected | — (compare `cfg info`'s `uart`/`i2c`) |
+| `port_claimed` | 7 | rejected | — |
+| `unknown_param` | 8 | not_found | — |
+| `flash_write` | 9 | failed | — |
+| `unknown_command` | — | not_found | — (`cfg` only, not a param result) |
+
+`#` is the `ParamResult` enum value (`lib/params/params.h`), append-only
+like `ParamId`. Binary transports (S.Port/CRSF param CRUD, future) send
+that number; text transports send the code string.
+
+Metadata lives in `g_paramDefs` (`lib/params/params.c`, `P_NUM`/`P_BOOL`/`P_ENUM`/`P_PORT` macros). A new param
+gets its kind, limits and apply flag there, and the firmware and every client pick them up from that one place.
 
 ## Adding a command
 
