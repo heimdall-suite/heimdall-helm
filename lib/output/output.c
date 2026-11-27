@@ -324,19 +324,10 @@ static uint16_t scale_slot(int32_t raw, int32_t srcMin, int32_t srcCenter, int32
     return (uint16_t)(dstCenter + ((raw - srcCenter) * (dstMax - dstCenter)) / srcSpan);
 }
 
-/* Reverse mirrors the slot's OWN output range (issue #37) -- NOT the
-   global RX_CHANNEL_RAW_MIN/MAX (#36's own original implementation),
-   which stopped being correct the moment slots got their own real
-   endpoints: by the time reverse runs, a value is already expressed in
-   this slot's physical range, not the RX raw range. */
-static uint16_t apply_reverse(uint16_t value, uint16_t outputMin, uint16_t outputMax) {
-    return (uint16_t)(outputMin + outputMax - value);
-}
-
 /* Resolves one slot's final output value: substitutes per its own
    failsafe policy if its source has nothing valid right now, else scales
    the raw source value through this slot's own endpoint/subtrim
-   trim; then applies reverse if configured -- except for a FIXED
+   trim, with reverse folded into that same scaling -- except for a FIXED
    failsafe value, which is already a literal physical position (issue
    #37) and skips scaling/reverse entirely. Also updates lastGoodValue[
    slot] with the final value actually produced, whenever the source IS
@@ -362,8 +353,17 @@ static uint16_t resolve_slot(uint8_t slot, bool sourceValid, uint16_t rawValue) 
         srcMax = cfg->sourceMax;
     }
 
-    uint16_t scaled = scale_slot(rawValue, srcMin, srcCenter, srcMax, trim->min, trim->center, trim->max);
-    uint16_t const finalValue = trim->reversed ? apply_reverse(scaled, trim->min, trim->max) : scaled;
+    /* Reverse swaps which output endpoint each source end lands on --
+       sourceMin->max, sourceCenter->center, sourceMax->min -- so center
+       (subtrim) stays exactly where it's configured. The old post-scale
+       mirror (min + max - value) flipped around the range MIDPOINT
+       instead, silently inverting any asymmetric subtrim: a 1000/1550/
+       2000 reversed slot sat at 1450 with the stick centered while its
+       fixed failsafe was 1550 -- a 100us jump on link loss (bench
+       2026-10-13). */
+    uint16_t const finalValue =
+        trim->reversed ? scale_slot(rawValue, srcMin, srcCenter, srcMax, trim->max, trim->center, trim->min)
+                       : scale_slot(rawValue, srcMin, srcCenter, srcMax, trim->min, trim->center, trim->max);
 
     lastGoodValue[slot] = finalValue;
     return finalValue;

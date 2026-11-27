@@ -10,10 +10,10 @@
    receiver-to-servo.md's "Function/input mapping" section.
 
    First-pass scope: one real mode function, one placeholder target -- a
-   hardcoded Pitch mode on CH9 and a Pitch target on CH4, both throwaway
+   hardcoded Pitch mode on CH9 and a Pitch target on CH12, both throwaway
    channel-index choices (mapping.c's own comment), not a real per-user
    assignment -- everything else stays passthrough. `channels[]` below is
-   still every raw channel unchanged (including CH9/CH4's own raw
+   still every raw channel unchanged (including CH9/CH12's own raw
    values), same as the old stub -- #36 (output mapping) decides what, if
    anything, still reads those two channels as passthrough too; this
    stage doesn't hide them. Not yet a generic, configurable table
@@ -39,7 +39,7 @@ typedef enum {
 typedef struct {
     uint16_t channels[RX_MAX_CHANNELS]; /* raw passthrough, every channel */
     PitchMode pitchMode;                /* from CH9, forced OFF on failsafe */
-    uint16_t pitchTarget;               /* from CH4, forced to a safe centered
+    uint16_t pitchTarget;               /* from CH12, forced to a safe centered
                                             setpoint on failsafe */
     RxStatus status;
 } MappingFrame;

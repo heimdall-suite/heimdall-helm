@@ -50,7 +50,7 @@ not applicable / blocked on hardware.
 | Feature | `afroflight32` | `matek_h743` | `nexus_xr` |
 |---|---|---|---|
 | Control: attitude estimation (pitch + roll) | [![planned #49](https://img.shields.io/badge/planned-%2349-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/49) | [![planned #49](https://img.shields.io/badge/planned-%2349-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/49) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
-| Control: Pitch mode plumbing (placeholder passthrough) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Control: Pitch mode plumbing (placeholder passthrough) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![done #38](https://img.shields.io/badge/done-%2338-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![done #38](https://img.shields.io/badge/done-%2338-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Control: Pitch real PID/attitude-hold | [![planned #50](https://img.shields.io/badge/planned-%2350-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/50) | [![planned #50](https://img.shields.io/badge/planned-%2350-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/50) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Control: Roll hold (new axis, architecture TBD) | [![planned #51](https://img.shields.io/badge/planned-%2351-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/51) | [![planned #51](https://img.shields.io/badge/planned-%2351-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/51) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Core: CLI | [![done #13](https://img.shields.io/badge/done-%2313-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/13) | [![done #1](https://img.shields.io/badge/done-%231-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/1) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
@@ -60,7 +60,7 @@ not applicable / blocked on hardware.
 | Logging: blackbox | [![planned #45](https://img.shields.io/badge/planned-%2345-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/45) <br />(SPI NOR, storage backend not started) | [![planned #44](https://img.shields.io/badge/planned-%2344-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/44) <br />(SD card, storage backend not started) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Mapping: function/input | [![done #34](https://img.shields.io/badge/done-%2334-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/34) | [![done #34](https://img.shields.io/badge/done-%2334-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/34) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Output: mapping (failsafe/reverse/endpoint) | [![done #36](https://img.shields.io/badge/done-%2336-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/36)&nbsp;[![done #37](https://img.shields.io/badge/done-%2337-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/37) | [![done #36](https://img.shields.io/badge/done-%2336-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/36)&nbsp;[![done #37](https://img.shields.io/badge/done-%2337-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/37) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
-| Output: params-backed trim | [![pending verify #39](https://img.shields.io/badge/pending_verify-%2339-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | [![pending verify #39](https://img.shields.io/badge/pending_verify-%2339-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Output: params-backed trim | [![done #39](https://img.shields.io/badge/done-%2339-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | [![done #39](https://img.shields.io/badge/done-%2339-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Peripheral: GPS — NMEA 0183 decode | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) | [![pending verify #40](https://img.shields.io/badge/pending_verify-%2340-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/40) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Peripheral: magnetometer | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) | [![planned #48](https://img.shields.io/badge/planned-%2348-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/48) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | RX: CRSF decode | [![planned #9](https://img.shields.io/badge/planned-%239-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/9) <br />(stub) | [![planned #9](https://img.shields.io/badge/planned-%239-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/9) <br />(stub) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
@@ -148,13 +148,23 @@ Mapping, output mapping (with per-slot failsafe/reverse/endpoint
 trim), and the PWM servo driver are shared code that runs
 identically on both boards.
 
-Race-critical work for the 2026-09-24 event has landed on `main` since,
-pending bench-verification (this repo's convention keeps an issue open
-until confirmed on real hardware, even once its code has merged):
-params-backed, runtime-settable output trim
+Bench-verified on `matek_h743` (2026-10-13, real receiver +
+transmitter): params-backed, runtime-settable output trim that survives
+a reboot and applies live
 ([#39](https://github.com/heimdall-suite/heimdall-helm/issues/39)),
-battery voltage/current and GPS wired into the telemetry table and
-S.Port adapter ([#24](https://github.com/heimdall-suite/heimdall-helm/issues/24)/[#40](https://github.com/heimdall-suite/heimdall-helm/issues/40)/[#41](https://github.com/heimdall-suite/heimdall-helm/issues/41)),
+pitch mode/target passthrough
+([#38](https://github.com/heimdall-suite/heimdall-helm/issues/38)), and
+battery voltage reaching the radio over S.Port. S.Port's DIY sensor IDs
+mirror `aoa-boat-controller`'s on purpose, so an existing radio setup
+reads Helm correctly
+([#63](https://github.com/heimdall-suite/heimdall-helm/issues/63)).
+
+Still pending bench-verification (this repo's convention keeps an issue
+open until confirmed on real hardware, even once its code has merged):
+battery scaling against a multimeter
+([#24](https://github.com/heimdall-suite/heimdall-helm/issues/24)), a
+real GPS fix — NMEA link itself is confirmed
+([#40](https://github.com/heimdall-suite/heimdall-helm/issues/40)/[#41](https://github.com/heimdall-suite/heimdall-helm/issues/41)),
 and S.Port bidirectional Lua-push trim writes
 ([#42](https://github.com/heimdall-suite/heimdall-helm/issues/42)) — all
 `matek_h743`-only so far, `afroflight32` parity tracked separately

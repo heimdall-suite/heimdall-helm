@@ -6,10 +6,10 @@ this page fits with the rest of the architecture docs.
 
 | Stage | `matek_h743` | `afroflight32` | `nexus_xr` |
 |---|---|---|---|
-| Control: mode/target loop (placeholder, no real PID yet) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Control: mode/target loop (placeholder, no real PID yet) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![done #38](https://img.shields.io/badge/done-%2338-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | [![done #35](https://img.shields.io/badge/done-%2335-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/35)&nbsp;[![done #38](https://img.shields.io/badge/done-%2338-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/38) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Mapping: function/input | [![done #34](https://img.shields.io/badge/done-%2334-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/34) | [![done #34](https://img.shields.io/badge/done-%2334-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/34) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Output: mapping (failsafe/reverse/endpoint) | [![done #36](https://img.shields.io/badge/done-%2336-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/36)&nbsp;[![done #37](https://img.shields.io/badge/done-%2337-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/37) | [![done #36](https://img.shields.io/badge/done-%2336-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/36)&nbsp;[![done #37](https://img.shields.io/badge/done-%2337-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/37) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
-| Output: params-backed trim | [![pending verify #39](https://img.shields.io/badge/pending_verify-%2339-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | [![pending verify #39](https://img.shields.io/badge/pending_verify-%2339-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
+| Output: params-backed trim | [![done #39](https://img.shields.io/badge/done-%2339-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | [![done #39](https://img.shields.io/badge/done-%2339-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/39) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | RX: CRSF decode | [![planned #9](https://img.shields.io/badge/planned-%239-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/9) <br />(stub) | [![planned #9](https://img.shields.io/badge/planned-%239-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/9) <br />(stub) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | RX: SBUS decode | [![done #8](https://img.shields.io/badge/done-%238-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/8) | [![planned #29](https://img.shields.io/badge/planned-%2329-blue)](https://github.com/heimdall-suite/heimdall-helm/issues/29) <br />(fixed-test-data stub today) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
 | Servo: real PWM driver | [![done #31](https://img.shields.io/badge/done-%2331-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/31) | [![done #31](https://img.shields.io/badge/done-%2331-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/31) | ![not ported](https://img.shields.io/badge/not_ported-lightgrey) |
@@ -207,7 +207,11 @@ slot a signal lands on.
 
 - **Direction/reverse**: some physical servos are mounted such that a
   normal command drives them backwards from what's intended. Each slot
-  carries its own independent reverse flag.
+  carries its own independent reverse flag. Reverse mirrors around the
+  slot's own **center**, not the midpoint of min/max: source min lands on
+  output max and vice versa, while center (subtrim) stays put, so a
+  reversed slot with an asymmetric center still rests at that center
+  with the stick centered.
 - **Endpoint/subtrim (min/center/max)**: each slot has its own physical
   travel range. A source's value is scaled into that range piecewise —
   source-min→slot-min, source-center→slot-center, source-max→slot-max,

@@ -2,8 +2,9 @@
 
 Status: mixed. The Off/Active mode-passthrough behavior described below
 is real, shared code
-([![pending verify #38](https://img.shields.io/badge/pending_verify-%2338-yellow)](https://github.com/heimdall-suite/heimdall-helm/issues/38),
-race-critical for 2026-09-24, bench-verify pending). Real per-axis
+([![done #38](https://img.shields.io/badge/done-%2338-brightgreen)](https://github.com/heimdall-suite/heimdall-helm/issues/38),
+bench-verified on matek_h743 2026-10-13: mode on CH9, target on CH12,
+OFF passes the target straight through, linear end to end). Real per-axis
 PID/attitude-hold control-law math does not exist yet — `control.c`'s
 Pitch loop is still a placeholder passthrough of its target (issue #35)
 — but it's now tracked, not just described here: attitude estimation
