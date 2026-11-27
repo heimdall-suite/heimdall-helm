@@ -395,22 +395,94 @@ static bool choice_listed(char const *choices, uint32_t value) {
     return false;
 }
 
-ParamCheckResult param_value_allowed(ParamId id, uint32_t value) {
+ParamResult param_value_allowed(ParamId id, uint32_t value) {
     if (id >= PARAM_COUNT) {
-        return PARAM_CHECK_RANGE;
+        return PARAM_ERR_UNKNOWN_PARAM;
     }
     ParamDef const *def = &g_paramDefs[id];
     switch ((ParamKind)def->kind) {
     case PARAM_KIND_NUMBER:
-        return (value < def->min || value > def->max) ? PARAM_CHECK_RANGE : PARAM_CHECK_OK;
+        return (value < def->min || value > def->max) ? PARAM_ERR_RANGE : PARAM_OK;
     case PARAM_KIND_BOOL:
-        return value > 1U ? PARAM_CHECK_BOOL : PARAM_CHECK_OK;
+        return value > 1U ? PARAM_ERR_BOOL : PARAM_OK;
     case PARAM_KIND_ENUM:
-        return choice_listed(def->choices, value) ? PARAM_CHECK_OK : PARAM_CHECK_CHOICE;
+        return choice_listed(def->choices, value) ? PARAM_OK : PARAM_ERR_CHOICE;
     case PARAM_KIND_PORT:
-        return PARAM_CHECK_OK;
+        return PARAM_OK;
     }
-    return PARAM_CHECK_RANGE;
+    return PARAM_ERR_RANGE;
+}
+
+ParamResult param_set_checked(ParamId id, uint32_t value) {
+    if (id >= PARAM_COUNT) {
+        return PARAM_ERR_UNKNOWN_PARAM;
+    }
+    if (g_paramDefs[id].kind == PARAM_KIND_PORT) {
+        return PARAM_ERR_FORMAT; /* needs a transport -- param_set_port() */
+    }
+    ParamResult const allowed = param_value_allowed(id, value);
+    if (allowed != PARAM_OK) {
+        return allowed;
+    }
+    if (param_id_is_output_field(id)) {
+        return param_set_output(id, value);
+    }
+    return param_set_u32(id, value) ? PARAM_OK : PARAM_ERR_FLASH_WRITE;
+}
+
+/* Issue #69 -- one row per ParamResult, indexed by its value. `code` is
+   part of the stable `cfg` interface (and a client's i18n key); `text`
+   is for the human CLI only. */
+typedef struct {
+    char const *code;
+    char const *text;
+    uint8_t status; /* ParamStatus */
+} ParamResultInfo;
+
+static ParamResultInfo const kResultInfo[PARAM_RESULT_COUNT] = {
+    [PARAM_OK] = {"ok", "ok", PARAM_STATUS_OK},
+    [PARAM_ERR_RANGE] = {"range", "out of range", PARAM_STATUS_REJECTED},
+    [PARAM_ERR_ORDER] = {"order",
+                         "would break min <= center <= max for this slot (move the limit on the far side first)",
+                         PARAM_STATUS_REJECTED},
+    [PARAM_ERR_BOOL] = {"bool", "must be 0 or 1", PARAM_STATUS_REJECTED},
+    [PARAM_ERR_CHOICE] = {"choice", "not one of the allowed values", PARAM_STATUS_REJECTED},
+    [PARAM_ERR_FORMAT] = {"format", "can't parse that value", PARAM_STATUS_REJECTED},
+    [PARAM_ERR_PORT_MISSING] = {"port_missing", "no such port on this board", PARAM_STATUS_REJECTED},
+    [PARAM_ERR_PORT_CLAIMED] = {"port_claimed", "port already claimed by another subsystem",
+                                PARAM_STATUS_REJECTED},
+    [PARAM_ERR_UNKNOWN_PARAM] = {"unknown_param", "no such param", PARAM_STATUS_NOT_FOUND},
+    [PARAM_ERR_FLASH_WRITE] = {"flash_write", "flash write error, value NOT saved", PARAM_STATUS_FAILED},
+};
+
+static ParamResultInfo const *result_info(ParamResult result) {
+    return (unsigned)result < PARAM_RESULT_COUNT ? &kResultInfo[result] : &kResultInfo[PARAM_ERR_FLASH_WRITE];
+}
+
+ParamStatus param_result_status(ParamResult result) {
+    return (ParamStatus)result_info(result)->status;
+}
+
+char const *param_result_code(ParamResult result) {
+    return result_info(result)->code;
+}
+
+char const *param_result_text(ParamResult result) {
+    return result_info(result)->text;
+}
+
+char const *param_status_name(ParamStatus status) {
+    switch (status) {
+    case PARAM_STATUS_OK:
+        return "ok";
+    case PARAM_STATUS_REJECTED:
+        return "rejected";
+    case PARAM_STATUS_NOT_FOUND:
+        return "not_found";
+    case PARAM_STATUS_FAILED:
+        return "failed";
+    }
+    return "failed";
 }
 
 int16_t param_find_by_name(char const *name) {
@@ -569,9 +641,9 @@ static PortOwnerFields const kPortOwners[] = {
     {PARAM_TELEMETRY_PORT, PARAM_TELEMETRY_SOURCE},
 };
 
-bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport) {
+ParamResult param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transport) {
     if (portIndex != PARAM_PORT_UNSET && !param_port_exists(portIndex, transport)) {
-        return false;
+        return PARAM_ERR_PORT_MISSING;
     }
 
     /* Collision check -- a port claimed (`.source == DIRECT`) by a
@@ -597,30 +669,30 @@ bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transp
             param_get_u32(kPortOwners[i].portId, &otherPort);
 
             if (otherSource == PARAM_PORT_SOURCE_DIRECT && otherPort == (uint32_t)portIndex) {
-                return false;
+                return PARAM_ERR_PORT_CLAIMED;
             }
         }
     }
 
-    return param_set_u32(portId, portIndex);
+    return param_set_u32(portId, portIndex) ? PARAM_OK : PARAM_ERR_FLASH_WRITE;
 }
 
 bool param_id_is_output_field(ParamId id) {
     return id >= PARAM_OUTPUT_SLOT_BASE && id < PARAM_COUNT;
 }
 
-ParamOutputResult param_set_output(ParamId id, uint32_t value) {
+ParamResult param_set_output(ParamId id, uint32_t value) {
     uint32_t const offset = (uint32_t)id - (uint32_t)PARAM_OUTPUT_SLOT_BASE;
     uint8_t const slot = (uint8_t)(offset / PARAM_OUTPUT_FIELD_COUNT);
     ParamOutputField const field = (ParamOutputField)(offset % PARAM_OUTPUT_FIELD_COUNT);
 
     if (field == PARAM_OUTPUT_FIELD_REVERSED) {
         if (value > 1U) {
-            return PARAM_OUTPUT_REJECT_BOOL;
+            return PARAM_ERR_BOOL;
         }
     } else {
         if (value < PARAM_OUTPUT_PULSE_MIN_US || value > PARAM_OUTPUT_PULSE_MAX_US) {
-            return PARAM_OUTPUT_REJECT_RANGE;
+            return PARAM_ERR_RANGE;
         }
 
         /* Order check against this slot's other two CURRENT values, with
@@ -640,9 +712,9 @@ ParamOutputResult param_set_output(ParamId id, uint32_t value) {
             max = value;
         }
         if (min > center || center > max) {
-            return PARAM_OUTPUT_REJECT_ORDER;
+            return PARAM_ERR_ORDER;
         }
     }
 
-    return param_set_u32(id, value) ? PARAM_OUTPUT_OK : PARAM_OUTPUT_REJECT_WRITE;
+    return param_set_u32(id, value) ? PARAM_OK : PARAM_ERR_FLASH_WRITE;
 }

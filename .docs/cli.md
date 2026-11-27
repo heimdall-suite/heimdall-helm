@@ -127,9 +127,10 @@ bumping `proto`.
 - Send commands terminated with a single `
 `.
 - **Validation lives in the firmware.** A client may pre-check using the
-  metadata, but the board's own `ok`/`error` is final. `param set` and
-  `cfg set` share one validated write path (`param_apply()` in `lib/cli/cli.c`),
-  so they accept and reject exactly the same values.
+  metadata, but the board's own `status`/`code` is final. `param set`,
+  `cfg set` and the S.Port trim push all end up in the same validated
+  setters in `lib/params`, which return one shared `ParamResult`, so they
+  accept and reject exactly the same values.
 
 **`cfg info`** → one line:
 
@@ -164,11 +165,45 @@ bumping `proto`.
 **`cfg set <name> <value>`** → one line. `value` is always what is stored *now* (unchanged on failure):
 
 ```json
-{"t":"set","name":"out1.center","ok":true,"value":1520}
-{"t":"set","name":"servo_rate","ok":false,"error":"must be one of 0=50 Hz,1=250 Hz,3=333 Hz","value":0}
+{"t":"set","name":"out1.center","status":"ok","value":1520}
+{"t":"set","name":"out1.center","status":"rejected","code":"range","min":500,"max":2500,"value":1520}
+{"t":"set","name":"servo_rate","status":"rejected","code":"choice","value":0}
+{"t":"set","name":"nosuch","status":"not_found","code":"unknown_param"}
 ```
 
-Anything else → `{"t":"error","error":"usage: ..."}`.
+Anything else → `{"t":"error","status":"not_found","code":"unknown_command"}`.
+
+### Status and codes
+
+Every action reply has two levels, like an HTTP status plus a problem
+code. `status` is the class a client handles generically. `code` (present
+whenever `status` isn't `ok`) is the exact reason, and doubles as the
+client's i18n key. There's no English text on this interface: the client
+localizes the code. The human `param set` prints the same result as text.
+
+| `status` | Meaning | Client should |
+|---|---|---|
+| `ok` | Done | Show success |
+| `rejected` | Understood, but the value isn't allowed — nothing written | Show the reason at the field |
+| `not_found` | No such param/command | Suspect a client/firmware version mismatch |
+| `failed` | Valid, but the board couldn't persist it — nothing saved | Show a board-level error |
+
+| `code` | # | `status` | Extra fields |
+|---|---|---|---|
+| `range` | 1 | rejected | `min`, `max` |
+| `order` | 2 | rejected | — (`out<N>.*`: would break min ≤ center ≤ max) |
+| `bool` | 3 | rejected | — |
+| `choice` | 4 | rejected | — (choices are in `cfg params`) |
+| `format` | 5 | rejected | — (unparseable number / port letter) |
+| `port_missing` | 6 | rejected | — (compare `cfg info`'s `uart`/`i2c`) |
+| `port_claimed` | 7 | rejected | — |
+| `unknown_param` | 8 | not_found | — |
+| `flash_write` | 9 | failed | — |
+| `unknown_command` | — | not_found | — (`cfg` only, not a param result) |
+
+`#` is the `ParamResult` enum value (`lib/params/params.h`), append-only
+like `ParamId`. Binary transports (S.Port/CRSF param CRUD, future) send
+that number; text transports send the code string.
 
 Metadata lives in `g_paramDefs` (`lib/params/params.c`, `P_NUM`/`P_BOOL`/`P_ENUM`/`P_PORT` macros). A new param
 gets its kind, limits and apply flag there, and the firmware and every client pick them up from that one place.

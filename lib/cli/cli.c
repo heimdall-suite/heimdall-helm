@@ -136,80 +136,46 @@ static bool param_parse_port_value(char const *str, uint32_t *outValue) {
     return false;
 }
 
-/* Issue #69 -- the one validated write path, shared by the human `param
-   set` and the machine `cfg set`, so both reject exactly the same values
-   with exactly the same reasons. Returns NULL on success, else a reason
-   without any "REJECTED --" prefix; *writeFailed tells a flash failure
-   (valid value, not saved) apart from a rejected value. `reason` is
-   caller-provided scratch for formatted reasons -- on the CLI task's
-   stack, not a static, so afroflight32 pays no RAM for it. */
-static const char *param_apply(ParamId id, char const *valueStr, bool *writeFailed, char *reason,
-                               size_t reasonSize) {
-    *writeFailed = false;
-
-    /* Issue #54 -- `.port` fields go through the validated setter
-       (board-existence + collision checks, params.h's own
-       param_set_port() comment). */
+/* Issue #69 -- the one write path shared by the human `param set` and the
+   machine `cfg set`: parse the value text, then hand it to the params
+   store's own validated setter. Both commands therefore get exactly the
+   same ParamResult for the same input; they only differ in how they
+   print it. */
+static ParamResult param_apply(ParamId id, char const *valueStr) {
     if (param_id_is_port_field(id)) {
         uint32_t portValue = 0;
         if (!param_parse_port_value(valueStr, &portValue)) {
-            return "expected a port letter (a-i) or \"none\"";
+            return PARAM_ERR_FORMAT;
         }
-        ParamPortTransport const transport = param_port_field_transport(id);
-        if (portValue != PARAM_PORT_UNSET && !param_port_exists((uint8_t)portValue, transport)) {
-            return "no such port on this board";
-        }
-        if (!param_set_port(id, (uint8_t)portValue, transport)) {
-            return "already claimed by another subsystem, or flash write error";
-        }
-        return NULL;
+        /* param_set_port() owns the existence + collision checks (#54). */
+        return param_set_port(id, (uint8_t)portValue, param_port_field_transport(id));
     }
 
     /* Strict parse -- strtoul alone silently turned "abc" into 0. */
     char *end = NULL;
     uint32_t const value = (uint32_t)strtoul(valueStr, &end, 0);
     if (end == valueStr || *end != '\0' || valueStr[0] == '-') {
-        return "not a number";
+        return PARAM_ERR_FORMAT;
     }
+    return param_set_checked(id, value);
+}
 
+/* Human-readable detail for a rejection, from the param's own metadata
+   -- the `cfg` side sends the same facts as fields (`min`/`max`) instead. */
+static void param_print_reject_detail(ParamId id, ParamResult result) {
     ParamDef const *def = &g_paramDefs[id];
-    switch (param_value_allowed(id, value)) {
-    case PARAM_CHECK_OK:
-        break;
-    case PARAM_CHECK_RANGE:
-        snprintf(reason, reasonSize, "must be %lu-%lu%s", (unsigned long)def->min, (unsigned long)def->max,
+    char detail[48];
+    if (result == PARAM_ERR_RANGE) {
+        snprintf(detail, sizeof(detail), " (%lu-%lu%s)", (unsigned long)def->min, (unsigned long)def->max,
                  def->unit == PARAM_UNIT_US ? "us" : "");
-        return reason;
-    case PARAM_CHECK_BOOL:
-        return "must be 0 or 1";
-    case PARAM_CHECK_CHOICE:
-        snprintf(reason, reasonSize, "must be one of %s", def->choices);
-        return reason;
+        shell_print(detail);
+    } else if (result == PARAM_ERR_CHOICE) {
+        shell_print(" (");
+        shell_print(def->choices);
+        shell_print(")");
+    } else if (result == PARAM_ERR_FORMAT && def->kind == PARAM_KIND_PORT) {
+        shell_print(" (expected a port letter or \"none\")");
     }
-
-    /* #65 -- out<N>.* trim also needs the cross-field order check. */
-    if (param_id_is_output_field(id)) {
-        switch (param_set_output(id, value)) {
-        case PARAM_OUTPUT_OK:
-            return NULL;
-        case PARAM_OUTPUT_REJECT_RANGE:
-            return "pulse must be 500-2500us";
-        case PARAM_OUTPUT_REJECT_ORDER:
-            return "would break min <= center <= max for this slot (move the limit on the far side first)";
-        case PARAM_OUTPUT_REJECT_BOOL:
-            return "reversed must be 0 or 1";
-        case PARAM_OUTPUT_REJECT_WRITE:
-            break;
-        }
-        *writeFailed = true;
-        return "flash write error, value NOT saved";
-    }
-
-    if (!param_set_u32(id, value)) {
-        *writeFailed = true;
-        return "flash write error, value NOT saved";
-    }
-    return NULL;
 }
 
 static void cmd_param(const char *args) {
@@ -248,12 +214,11 @@ static void cmd_param(const char *args) {
             return;
         }
 
-        bool writeFailed = false;
-        char reason[80];
-        char const *err = param_apply((ParamId)id, valueStr, &writeFailed, reason, sizeof(reason));
-        if (err != NULL) {
-            shell_print(writeFailed ? "FAILED -- " : "REJECTED -- ");
-            shell_print(err);
+        ParamResult const result = param_apply((ParamId)id, valueStr);
+        if (result != PARAM_OK) {
+            shell_print(param_result_status(result) == PARAM_STATUS_FAILED ? "FAILED -- " : "REJECTED -- ");
+            shell_print(param_result_text(result));
+            param_print_reject_detail((ParamId)id, result);
             shell_print("\r\n");
             return;
         }
@@ -401,9 +366,23 @@ static void cfg_info(void) {
     shell_print("]}\r\n");
 }
 
-static void cfg_error(char const *msg) {
+/* status (+ code when not ok) -- the two-level result every `cfg` action
+   reply carries (#69): status for generic handling, code for the exact
+   reason and the client's i18n key. No English text: the client
+   localizes the code itself. */
+static void json_kv_result(ParamResult result) {
+    json_kv_str("status", param_status_name(param_result_status(result)));
+    if (result != PARAM_OK) {
+        json_kv_str("code", param_result_code(result));
+    }
+}
+
+/* A bad/unknown `cfg` subcommand -- not a param outcome, so it has its
+   own code outside ParamResult, same not_found class. */
+static void cfg_unknown_command(void) {
     shell_print("{\"t\":\"error\"");
-    json_kv_str("error", msg);
+    json_kv_str("status", param_status_name(PARAM_STATUS_NOT_FOUND));
+    json_kv_str("code", "unknown_command");
     shell_print("}\r\n");
 }
 
@@ -434,27 +413,28 @@ static void cmd_cfg(const char *args) {
         shell_print("{\"t\":\"set\"");
         json_kv_str("name", name);
         if (id < 0) {
-            shell_print(",\"ok\":false");
-            json_kv_str("error", "no such param");
+            json_kv_result(PARAM_ERR_UNKNOWN_PARAM);
             shell_print("}\r\n");
             return;
         }
-        bool writeFailed = false;
-        char reason[80];
-        char const *err = param_apply((ParamId)id, valueStr, &writeFailed, reason, sizeof(reason));
+        ParamResult const result = param_apply((ParamId)id, valueStr);
+        json_kv_result(result);
+        if (result == PARAM_ERR_RANGE) {
+            /* The limits the value broke, so the client can say so
+               without a second lookup. CHOICE needs nothing extra: the
+               choices are already in `cfg params`. */
+            json_kv_u32("min", g_paramDefs[id].min);
+            json_kv_u32("max", g_paramDefs[id].max);
+        }
         uint32_t value = 0;
         param_get_u32((ParamId)id, &value);
-        shell_print(err == NULL ? ",\"ok\":true" : ",\"ok\":false");
-        if (err != NULL) {
-            json_kv_str("error", err);
-        }
         /* Always report the value now stored -- unchanged on failure. */
         json_kv_param_value("value", (ParamId)id, value);
         shell_print("}\r\n");
         return;
     }
 
-    cfg_error("usage: cfg info | cfg params | cfg set <name> <value>");
+    cfg_unknown_command();
 }
 #endif
 
