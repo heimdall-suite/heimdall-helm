@@ -557,3 +557,45 @@ bool param_set_port(ParamId portId, uint8_t portIndex, ParamPortTransport transp
 
     return param_set_u32(portId, portIndex);
 }
+
+bool param_id_is_output_field(ParamId id) {
+    return id >= PARAM_OUTPUT_SLOT_BASE && id < PARAM_COUNT;
+}
+
+ParamOutputResult param_set_output(ParamId id, uint32_t value) {
+    uint32_t const offset = (uint32_t)id - (uint32_t)PARAM_OUTPUT_SLOT_BASE;
+    uint8_t const slot = (uint8_t)(offset / PARAM_OUTPUT_FIELD_COUNT);
+    ParamOutputField const field = (ParamOutputField)(offset % PARAM_OUTPUT_FIELD_COUNT);
+
+    if (field == PARAM_OUTPUT_FIELD_REVERSED) {
+        if (value > 1U) {
+            return PARAM_OUTPUT_REJECT_BOOL;
+        }
+    } else {
+        if (value < PARAM_OUTPUT_PULSE_MIN_US || value > PARAM_OUTPUT_PULSE_MAX_US) {
+            return PARAM_OUTPUT_REJECT_RANGE;
+        }
+
+        /* Order check against this slot's other two CURRENT values, with
+           the candidate substituted in -- equal is fine (a slot pinned
+           to one position is a legitimate, if odd, config). */
+        uint32_t min = 0U;
+        uint32_t center = 0U;
+        uint32_t max = 0U;
+        param_get_u32(param_output_slot_id(slot, PARAM_OUTPUT_FIELD_MIN), &min);
+        param_get_u32(param_output_slot_id(slot, PARAM_OUTPUT_FIELD_CENTER), &center);
+        param_get_u32(param_output_slot_id(slot, PARAM_OUTPUT_FIELD_MAX), &max);
+        if (field == PARAM_OUTPUT_FIELD_MIN) {
+            min = value;
+        } else if (field == PARAM_OUTPUT_FIELD_CENTER) {
+            center = value;
+        } else {
+            max = value;
+        }
+        if (min > center || center > max) {
+            return PARAM_OUTPUT_REJECT_ORDER;
+        }
+    }
+
+    return param_set_u32(id, value) ? PARAM_OUTPUT_OK : PARAM_OUTPUT_REJECT_WRITE;
+}

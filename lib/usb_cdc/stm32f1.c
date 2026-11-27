@@ -1,6 +1,10 @@
 #include "usb_cdc.h"
 #include "stm32f1xx_hal.h"
 
+/* Defined in src/main.c -- same explicit declaration lib/servo/servo.c
+   uses; implicit declarations are a build error now (platformio.ini). */
+extern void Error_Handler(void);
+
 /* CLI transport for afroflight32 -- NOT a native USB CDC device. This
    chip's own USB peripheral is never touched here at all.
 

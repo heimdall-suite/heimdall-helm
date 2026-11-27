@@ -1,6 +1,10 @@
 #include "board.h"
 #include "stm32f1xx_hal.h"
 
+/* Defined in src/main.c -- same explicit declaration lib/servo/servo.c
+   uses; implicit declarations are a build error now (platformio.ini). */
+extern void Error_Handler(void);
+
 /* Clock tree: 12MHz HSE x6 PLL = 72MHz sysclk, APB1 = HCLK/2 (36MHz,
    within the F103's 36MHz APB1 limit), APB2 = HCLK/1 (72MHz).
 
